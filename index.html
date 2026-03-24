@@ -1,0 +1,1814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能演讲伴侣 - 沉浸版 (Pro)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                    boxShadow: { 'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.07)' }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .view { transition: opacity 0.3s ease, transform 0.3s ease; }
+        .view.hidden { opacity: 0; pointer-events: none; position: absolute; visibility: hidden; transform: translateY(10px); }
+        .view:not(.hidden) { opacity: 1; visibility: visible; transform: translateY(0); position: relative; }
+
+        .sentence-block {
+            display: block;
+            margin-bottom: 2rem;
+            padding: 1.5rem 2rem;
+            border-radius: 1.25rem;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            background-color: transparent;
+            border: 1px solid transparent;
+        }
+        .sentence-past { opacity: 0.25; filter: grayscale(100%); }
+        .sentence-future { opacity: 0.6; }
+        
+        .sentence-active { 
+            opacity: 1; 
+            background-color: rgba(254, 240, 138, 0.15);
+            border-color: rgba(250, 204, 21, 0.3);
+            box-shadow: 0 10px 30px -10px rgba(250, 204, 21, 0.15);
+        }
+
+        .word-token {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 0.3rem 0.4rem;
+            margin: 0.15rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: all 0.15s ease-out;
+            border: 1px solid transparent;
+        }
+        
+        .word-active { 
+            background-color: #fde047;
+            color: #0f172a; 
+            box-shadow: 0 4px 12px rgba(253, 224, 71, 0.4);
+            border-color: #facc15;
+            z-index: 10;
+        }
+        .word-past { color: #94a3b8; }
+        .word-future { color: #475569; transition: color 0.3s ease; }
+        .word-future:hover { background-color: rgba(0,0,0,0.03); color: #0f172a; }
+
+        .word-text { display: block; line-height: 1.1; }
+
+        .word-note {
+            display: block;
+            font-size: 0.85rem;
+            line-height: 1.25rem;
+            height: 1.25rem;
+            color: #6366f1;
+            font-weight: 500;
+            margin-top: 0.3rem;
+            white-space: nowrap;
+            overflow: visible;
+            letter-spacing: 0.02em;
+        }
+
+        #prompter-content { 
+            word-break: keep-all; 
+            overflow-wrap: break-word; 
+            letter-spacing: 0.01em;
+        }
+
+        .glass-header {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .modal-enter { animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        /* 便利贴模块 */
+        #sticky-note-panel {
+            width: 200px;
+            min-width: 200px;
+            background: #fef9c3;
+            border-right: 1px solid #fde68a;
+            display: flex;
+            flex-direction: column;
+            z-index: 40;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.04);
+            position: relative;
+        }
+        #sticky-note-panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #fbbf24, #f59e0b);
+        }
+        #sticky-note-header {
+            padding: 14px 14px 8px;
+            margin-top: 4px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #92400e;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        #sticky-note-textarea {
+            flex: 1;
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            resize: none;
+            font-size: 0.8rem;
+            line-height: 1.7;
+            color: #78350f;
+            font-family: 'Inter', sans-serif;
+            padding: 8px 14px 8px;
+            box-sizing: border-box;
+        }
+        #sticky-note-textarea::placeholder { color: #d97706; opacity: 0.55; }
+        .sticky-drop-zone {
+            flex-shrink: 0;
+            border-top: 1.5px dashed #fde68a;
+            padding: 8px 10px;
+            text-align: center;
+            color: #b45309;
+            font-size: 0.68rem;
+            font-weight: 600;
+            transition: all 0.15s;
+            background: rgba(251,191,36,0.08);
+            letter-spacing: 0.02em;
+        }
+        .sticky-drop-zone.drag-over {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        /* 可拖拽的词语 */
+        .word-token[draggable="true"] { cursor: grab; }
+        .word-token.dragging { opacity: 0.4; cursor: grabbing; }
+
+        /* ===== 小窗模式 ===== */
+        #mini-window {
+            display: none;
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 380px;
+            background: rgba(15, 18, 30, 0.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 24px 60px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(255,255,255,0.05) inset;
+            z-index: 9999;
+            overflow: hidden;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            user-select: none;
+        }
+        #mini-window.visible {
+            display: block;
+            animation: miniPop 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes miniPop {
+            from { opacity: 0; transform: scale(0.92) translateY(12px); }
+            to   { opacity: 1; transform: scale(1)  translateY(0); }
+        }
+
+        /* 拖动条 */
+        #mini-drag-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px 6px;
+            cursor: grab;
+        }
+        #mini-drag-bar:active { cursor: grabbing; }
+        #mini-drag-dots {
+            display: flex; gap: 5px;
+        }
+        #mini-drag-dots span {
+            width: 10px; height: 10px; border-radius: 50%;
+            display: block;
+        }
+        #mini-close-btn {
+            background: #ff5f57; 
+        }
+        #mini-min-btn   { background: #febc2e; }
+        #mini-expand-btn { background: #28c840; }
+        #mini-title {
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: rgba(255,255,255,0.3);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        /* 上下文行 */
+        .mini-line {
+            padding: 3px 18px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            line-height: 1.5;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .mini-line-past {
+            color: rgba(255,255,255,0.2);
+            font-size: 0.78rem;
+            font-weight: 500;
+        }
+        .mini-line-prev {
+            color: rgba(255,255,255,0.35);
+            font-size: 0.88rem;
+        }
+        .mini-line-active {
+            color: rgba(255,255,255,0.75);
+            font-size: 1.1rem;
+            font-weight: 600;
+            padding: 6px 18px;
+            background: rgba(253,224,71,0.06);
+            border-left: 2px solid rgba(253,224,71,0.5);
+        }
+        .mini-word-past { color: rgba(255,255,255,0.25); }
+        .mini-word-active {
+            background: #fde047;
+            color: #0f172a;
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-weight: 800;
+            box-shadow: 0 2px 10px rgba(253,224,71,0.45);
+        }
+        .mini-word-future { color: rgba(255,255,255,0.72); }
+        .mini-line-next {
+            color: rgba(255,255,255,0.45);
+            font-size: 0.88rem;
+        }
+        .mini-line-future {
+            color: rgba(255,255,255,0.18);
+            font-size: 0.78rem;
+            font-weight: 500;
+        }
+
+        /* 进度条 */
+        #mini-progress-track {
+            height: 2px;
+            background: rgba(255,255,255,0.06);
+            margin: 10px 18px 14px;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        #mini-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #6366f1, #fde047);
+            border-radius: 2px;
+            transition: width 0.4s ease;
+        }
+
+        /* 触发提示 */
+        #mini-trigger-hint {
+            display: none;
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(15,18,30,0.85);
+            backdrop-filter: blur(12px);
+            color: rgba(255,255,255,0.5);
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
+            z-index: 9998;
+            letter-spacing: 0.04em;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans h-screen overflow-hidden flex flex-col selection:bg-yellow-200 selection:text-slate-900">
+
+    <div id="engine-loader" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center backdrop-blur-sm transition-opacity duration-300">
+        <div class="bg-white rounded-3xl p-8 w-11/12 max-w-md shadow-2xl text-center modal-enter">
+            <div class="flex justify-center mb-4">
+                <svg class="animate-spin text-indigo-600" xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            </div>
+            <h3 class="text-xl font-bold text-slate-800 mb-2">引擎预热中</h3>
+            <p class="text-sm text-slate-500 mb-6">正在初始化离线识别流与文本纠偏上下文...</p>
+            <div class="w-full h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                <div id="loader-progress" class="h-full w-0 bg-indigo-600 transition-all duration-500 ease-out"></div>
+            </div>
+            <p id="loader-text" class="text-xs font-semibold text-indigo-600 mt-3 tracking-wide">启动麦克风 (0%)</p>
+        </div>
+    </div>
+
+    <header class="glass-header px-6 py-4 flex items-center justify-between z-30 sticky top-0 transition-all duration-300" id="main-header">
+        <div class="flex items-center space-x-3 cursor-pointer group" onclick="navigate('home')">
+            <div class="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-600/20 group-hover:scale-105 group-hover:bg-indigo-500 transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+            </div>
+            <h1 class="text-xl font-bold text-slate-800 tracking-tight">VocalFlow <span class="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-md ml-2 font-semibold tracking-wider uppercase border border-indigo-100">Pro</span></h1>
+        </div>
+        <div id="header-actions" class="flex items-center space-x-4"></div>
+    </header>
+
+    <div id="error-banner" class="hidden bg-red-50 border border-red-200 rounded-xl p-4 mx-6 mt-4 flex items-start space-x-3 z-50 shadow-sm">
+        <svg class="text-red-500 mt-0.5" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+        <p id="error-msg" class="text-red-700 text-sm font-medium"></p>
+    </div>
+
+    <main class="flex-1 flex flex-col overflow-hidden relative">
+        
+        <div id="view-home" class="view hidden flex-1 overflow-y-auto p-6 md:p-10 w-full max-w-7xl mx-auto">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-end mb-10 space-y-4 md:space-y-0">
+                <div>
+                    <h2 class="text-3xl font-extrabold text-slate-900 mb-2 tracking-tight">我的演讲库</h2>
+                    <p class="text-slate-500 font-medium">零延迟极速追踪，每一次开口都自信从容。</p>
+                </div>
+                <button onclick="createNewScript()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-semibold flex items-center space-x-2 shadow-lg shadow-indigo-600/30 transition-all transform hover:-translate-y-0.5 active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                    <span>新建稿件</span>
+                </button>
+            </div>
+            <div id="scripts-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"></div>
+        </div>
+
+        <div id="view-edit" class="view hidden flex-1 flex flex-col p-6 max-w-5xl w-full mx-auto">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col p-8 overflow-hidden">
+                <input id="edit-title" type="text" class="text-4xl font-extrabold bg-transparent border-none focus:ring-0 outline-none mb-6 text-slate-900 placeholder-slate-300 w-full tracking-tight" placeholder="输入演讲标题...">
+                
+                <div class="flex flex-wrap items-center gap-4 mb-6 pb-6 border-b border-slate-100">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-slate-500 text-sm font-medium">语音引擎</span>
+                        <select id="edit-lang" class="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none transition-shadow font-medium">
+                            <option value="en-US">English (US/International)</option>
+                            <option value="zh-CN">中文 (简体)</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-1.5 text-xs text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-md border border-emerald-100 font-medium">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                        <span>常驻预热模式就绪</span>
+                    </div>
+                </div>
+
+                <textarea id="edit-content" class="flex-1 w-full text-lg border-none focus:ring-0 outline-none resize-none bg-transparent text-slate-700 placeholder-slate-300 leading-relaxed font-medium custom-scrollbar" placeholder="在此尽情书写您的演讲内容..."></textarea>
+            </div>
+            
+            <div class="mt-6 flex justify-between items-center px-2">
+                <span id="save-status" class="text-sm font-medium text-slate-400 flex items-center space-x-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                    <span>已保存至本地</span>
+                </span>
+                <button onclick="startPresentation()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3.5 rounded-xl font-bold text-lg flex items-center shadow-xl shadow-indigo-600/20 transition-all transform hover:-translate-y-1 active:scale-95">
+                    <svg class="mr-2" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    进入提词模式
+                </button>
+            </div>
+        </div>
+
+        <div id="view-present" class="view hidden flex-1 overflow-hidden bg-slate-50/50 flex flex-row">
+
+            <!-- 便利贴模块（左侧） -->
+            <div id="sticky-note-panel">
+                <div id="sticky-note-header">
+                    <span>📝 便利贴</span>
+                    <button onclick="clearStickyNote()" title="清空便利贴" style="background:none;border:none;cursor:pointer;color:#b45309;font-size:11px;padding:0;">清空</button>
+                </div>
+                <textarea id="sticky-note-textarea" placeholder="在此自由记录笔记..." oninput="saveStickyNote()"></textarea>
+                <div id="sticky-drop-zone" class="sticky-drop-zone">
+                    拖入词语 → 自动翻译并记录
+                </div>
+            </div>
+
+            <div id="present-scroll-container" class="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative">
+                <div class="max-w-4xl mx-auto px-6 py-12 md:py-24 pb-[60vh]">
+                    <div id="prompter-content" class="text-3xl md:text-5xl lg:text-[3.5rem] font-semibold text-slate-300 leading-tight">
+                        </div>
+                </div>
+            </div>
+
+            <div class="w-80 bg-white/80 backdrop-blur-xl border-l border-slate-200 shadow-glass flex flex-col p-6 space-y-8 z-40 overflow-y-auto custom-scrollbar">
+                
+                <div>
+                    <h3 class="text-lg font-extrabold text-slate-800 mb-4 tracking-tight">控制台</h3>
+                    <div class="flex flex-col space-y-3">
+                        <button id="btn-mic" onclick="toggleListening()" class="flex items-center justify-center space-x-2 px-6 py-4 rounded-xl font-bold text-white transition-all shadow-md bg-indigo-600 hover:bg-indigo-700 active:scale-95 w-full">
+                            <span id="mic-icon-container">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                            </span>
+                            <span id="mic-text" class="tracking-wide">开始追踪</span>
+                        </button>
+                        <button onclick="resetTracker()" class="flex items-center justify-center space-x-2 p-3.5 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200 hover:text-slate-900 transition-colors active:scale-95 w-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                            <span>重置到开头</span>
+                        </button>
+                        <button onclick="togglePiP()" id="pip-sidebar-btn" class="flex items-center justify-center space-x-2 p-3.5 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-indigo-50 hover:text-indigo-600 transition-colors active:scale-95 w-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
+                            <span>画中画悬浮</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex flex-col space-y-3">
+                    <div class="text-sm font-semibold text-slate-600 flex items-center space-x-2">
+                        <svg class="text-slate-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4zM22 9l-6 6M16 9l6 6"/></svg>
+                        <span>麦克风电平</span>
+                    </div>
+                    <div class="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden flex-shrink-0 shadow-inner">
+                        <div id="volume-bar-inner" class="h-full w-0 bg-emerald-500 transition-all duration-75"></div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col space-y-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-100">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">快捷操作</span>
+                    
+                    <div class="flex items-start space-x-3 text-sm text-slate-600">
+                        <kbd class="font-sans border border-slate-300 rounded-md px-2 py-0.5 bg-white shadow-sm text-slate-700 font-bold tracking-wide mt-0.5 flex-shrink-0">左键</kbd>
+                        <span class="leading-relaxed">识别跟丢时，直接点击单词手动跳转进度。</span>
+                    </div>
+                    
+                    <div class="flex items-start space-x-3 text-sm text-slate-600">
+                        <kbd class="font-sans border border-slate-300 rounded-md px-2 py-0.5 bg-white shadow-sm text-indigo-600 font-bold tracking-wide mt-0.5 flex-shrink-0">右键</kbd>
+                        <span class="leading-relaxed">右键点击任意生僻词，为其添加拼读注释。</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <div id="note-modal" class="hidden fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center backdrop-blur-sm transition-opacity duration-300">
+        <div class="bg-white rounded-3xl p-8 w-11/12 max-w-md shadow-2xl modal-enter border border-white">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold text-slate-800">单词批注</h3>
+                <button onclick="closeNoteModal()" class="text-slate-400 hover:text-slate-700 transition-colors p-1 bg-slate-50 rounded-full hover:bg-slate-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+                </button>
+            </div>
+            
+            <div class="text-center mb-6">
+                <p class="text-sm text-slate-500 mb-2 font-medium">您正在为以下单词添加注释</p>
+                <span id="note-word-display" class="font-sans text-4xl font-extrabold text-indigo-600 bg-indigo-50/50 border border-indigo-100 px-6 py-3 rounded-2xl inline-block shadow-sm"></span>
+            </div>
+            
+            <div class="relative">
+                <input type="text" id="note-input" class="w-full border-2 border-slate-200 rounded-2xl p-4 mb-8 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none text-lg font-medium text-slate-800 transition-all placeholder-slate-400" placeholder="例如: /prəˌnʌn/ 或 中文释义" onkeypress="handleNoteEnter(event)">
+                <div class="absolute right-4 top-4 text-slate-300 hidden md:block">
+                    <kbd class="font-sans text-xs border border-slate-200 rounded px-2 py-1 bg-slate-50">Enter ↵</kbd>
+                </div>
+            </div>
+
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeNoteModal()" class="px-6 py-3 text-slate-600 bg-slate-100 hover:bg-slate-200 font-semibold rounded-xl transition-colors">取消</button>
+                <button onclick="saveNote()" class="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition-all active:scale-95">保存批注</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+/** 核心状态 */
+let scripts = JSON.parse(localStorage.getItem('vocalflow_scripts_pro')) || [];
+let currentScriptId = null;
+let currentView = 'home'; 
+
+// 双重引擎控制流
+let isEngineRunning = false;   // 物理语音引擎状态 (后台常驻)
+let isUserTracking = false;    // 逻辑判定门闸 (控制台开关)
+
+let currentWordIndex = 0;      // 视觉进度指针 (逐词高亮层)
+let targetWordIndex = 0;       // 大脑目标指针 (实际识别层)
+let isCatchingUp = false;      // 追赶动画锁
+let animationTimer = null;     // 追赶动画计时器
+
+let parsedData = [];
+let wordTokens = [];
+let recognition = null;
+let saveTimeout = null;
+let currentEditingNoteIndex = null;
+
+let audioContext = null;
+let analyser = null;
+let microphone = null;
+let visualizerReqId = null;
+
+function init() {
+    if (scripts.length === 0) {
+        scripts.push({
+            id: Date.now().toString(),
+            title: "Steve Jobs - Stanford Commencement",
+            content: "I am honored to be with you today at your commencement from one of the finest universities in the world.\nI never graduated from college.\nTruth be told, this is the closest I've ever gotten to a college graduation.\nToday I want to tell you three stories from my life.",
+            language: "en-US",
+            annotations: {
+                "2": "感到荣幸的",
+                "10": "毕业典礼",
+                "16": "最好的",
+                "22": "毕业",
+                "30": "老实说 /təʊld/"
+            },
+            updatedAt: Date.now()
+        });
+        saveScriptsToLocal();
+    }
+    navigate('home');
+    
+    document.getElementById('edit-content').addEventListener('input', scheduleSave);
+    document.getElementById('edit-title').addEventListener('input', scheduleSave);
+    document.getElementById('edit-lang').addEventListener('change', scheduleSave);
+}
+
+function saveScriptsToLocal() {
+    localStorage.setItem('vocalflow_scripts_pro', JSON.stringify(scripts));
+}
+
+function navigate(view, scriptId = null) {
+    const header = document.getElementById('main-header');
+    
+    if (currentView === 'present' && view !== 'present') {
+        stopEngineCompletely();
+        stopAudioVisualizer();
+        clearTimeout(animationTimer);
+    }
+    
+    document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
+    
+    currentView = view;
+    setTimeout(() => {
+        document.getElementById(`view-${view}`).classList.remove('hidden');
+    }, 10);
+
+    const headerActions = document.getElementById('header-actions');
+    if (view === 'home') {
+        header.classList.remove('-translate-y-full');
+        currentScriptId = null;
+        renderHome();
+        headerActions.innerHTML = ''; 
+    } else if (view === 'edit') {
+        header.classList.remove('-translate-y-full');
+        currentScriptId = scriptId;
+        renderEdit();
+        headerActions.innerHTML = `<button onclick="navigate('home')" class="px-5 py-2 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl font-semibold transition-colors">返回列表</button>`;
+    } else if (view === 'present') {
+        header.classList.add('bg-white/50');
+        headerActions.innerHTML = `<button onclick="navigate('edit', '${currentScriptId}')" class="px-5 py-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 rounded-xl font-semibold transition-colors flex items-center space-x-1"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg><span>编辑内容</span></button>`;
+    }
+}
+
+// ================= 音量检测核心逻辑 =================
+async function startAudioVisualizer() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        microphone = audioContext.createMediaStreamSource(stream);
+        
+        microphone.connect(analyser);
+        analyser.fftSize = 256;
+        
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        const volumeBarInner = document.getElementById('volume-bar-inner');
+
+        function drawVisualizer() {
+            if (!audioContext) return;
+            visualizerReqId = requestAnimationFrame(drawVisualizer);
+            analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for(let i = 0; i < bufferLength; i++) sum += dataArray[i];
+            let percent = Math.min(100, ((sum / bufferLength) / 64) * 100); 
+            
+            if (volumeBarInner) {
+                volumeBarInner.style.width = percent + '%';
+                if (percent > 85) volumeBarInner.style.backgroundColor = '#ef4444';
+                else if (percent > 50) volumeBarInner.style.backgroundColor = '#eab308';
+                else volumeBarInner.style.backgroundColor = '#10b981';
+            }
+        }
+        drawVisualizer();
+        if (audioContext.state === 'suspended') audioContext.resume();
+    } catch (err) {
+        console.warn("无法启动麦克风可视化检测:", err);
+    }
+}
+
+function stopAudioVisualizer() {
+    if (visualizerReqId) cancelAnimationFrame(visualizerReqId);
+    if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+    }
+    const volumeBarInner = document.getElementById('volume-bar-inner');
+    if (volumeBarInner) volumeBarInner.style.width = '0%';
+}
+// ==============================================
+
+function renderHome() {
+    const grid = document.getElementById('scripts-grid');
+    grid.innerHTML = '';
+    
+    [...scripts].sort((a, b) => b.updatedAt - a.updatedAt).forEach(script => {
+        const card = document.createElement('div');
+        card.className = "bg-white p-6 rounded-3xl shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 border border-slate-100 cursor-pointer flex flex-col h-56 relative group";
+        card.innerHTML = `
+            <div class="flex justify-between items-start mb-3" onclick="navigate('edit', '${script.id}')">
+                <h3 class="text-xl font-bold text-slate-800 line-clamp-2 leading-tight">${script.title || '未命名演讲稿'}</h3>
+            </div>
+            <p class="text-slate-500 text-sm flex-1 overflow-hidden leading-relaxed" onclick="navigate('edit', '${script.id}')">${script.content.substring(0, 80)}...</p>
+            <div class="mt-4 flex justify-between items-center pt-4 border-t border-slate-50">
+                <span class="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-xs font-semibold tracking-wide">${script.language === 'en-US' ? 'EN-US' : 'ZH-CN'}</span>
+                <span class="text-xs text-slate-400 font-medium">${new Date(script.updatedAt).toLocaleDateString()}</span>
+            </div>
+            <button onclick="deleteScript('${script.id}', event)" class="absolute top-4 right-4 bg-white/80 backdrop-blur text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all p-2 rounded-full shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </button>
+        `;
+        grid.appendChild(card);
+    });
+}
+
+function createNewScript() {
+    const newId = Date.now().toString();
+    scripts.push({ id: newId, title: "", content: "", language: "en-US", annotations: {}, updatedAt: Date.now() });
+    saveScriptsToLocal();
+    navigate('edit', newId);
+}
+
+function deleteScript(id, event) {
+    event.stopPropagation();
+    if (confirm('确定要移至废纸篓吗？此操作不可恢复。')) {
+        scripts = scripts.filter(s => s.id !== id);
+        saveScriptsToLocal();
+        renderHome();
+    }
+}
+
+function renderEdit() {
+    const script = scripts.find(s => s.id === currentScriptId);
+    if (!script) return navigate('home');
+    document.getElementById('edit-title').value = script.title;
+    document.getElementById('edit-content').value = script.content;
+    document.getElementById('edit-lang').value = script.language || 'en-US';
+    
+    const timeString = new Date(script.updatedAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    document.getElementById('save-status').innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="mr-1 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>上次保存 ${timeString}</span>`;
+}
+
+function scheduleSave() {
+    document.getElementById('save-status').innerHTML = `<svg class="animate-spin mr-1 text-indigo-500" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg><span>保存中...</span>`;
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        const script = scripts.find(s => s.id === currentScriptId);
+        if (script) {
+            script.title = document.getElementById('edit-title').value;
+            script.content = document.getElementById('edit-content').value;
+            script.language = document.getElementById('edit-lang').value;
+            script.updatedAt = Date.now();
+            saveScriptsToLocal();
+            renderEdit();
+        }
+    }, 800); 
+}
+
+function startPresentation() { 
+    scheduleSave(); 
+    
+    // 显示进度条 Modal
+    const loader = document.getElementById('engine-loader');
+    loader.classList.remove('hidden');
+    document.getElementById('loader-progress').style.width = '15%';
+    document.getElementById('loader-text').innerText = '正在解析文稿结构 (15%)...';
+    
+    // 短暂延迟保证 UI 渲染，然后执行重量级文稿渲染和引擎拉起
+    setTimeout(() => {
+        navigate('present');
+        renderPresent(); 
+        startAudioVisualizer();
+        
+        document.getElementById('loader-progress').style.width = '50%';
+        document.getElementById('loader-text').innerText = '正在唤醒识别引擎与麦克风 (50%)...';
+        
+        // 调用引擎启动
+        const script = scripts.find(s => s.id === currentScriptId);
+        initSpeechRecognition(script.language);
+    }, 400);
+}
+
+function renderPresent() {
+    const script = scripts.find(s => s.id === currentScriptId);
+    if (!script) return;
+    if (!script.annotations) script.annotations = {};
+
+    const text = script.content;
+    const lang = script.language;
+    
+    const rawSentences = text.split(/(?<=[.?!。？！\n])\s*/).filter(s => s.trim().length > 0);
+    const segmenter = new Intl.Segmenter(lang, { granularity: 'word' });
+    
+    parsedData = [];
+    wordTokens = [];
+    let globalIndex = 0;
+
+    const container = document.getElementById('prompter-content');
+    container.innerHTML = '';
+
+    rawSentences.forEach((sentenceText, sIndex) => {
+        const segments = Array.from(segmenter.segment(sentenceText));
+        
+        const sentenceSpan = document.createElement('div');
+        sentenceSpan.className = 'sentence-block sentence-future';
+        sentenceSpan.id = `sentence-${sIndex}`;
+        
+        let wordsInSentence = [];
+        
+        segments.forEach(segment => {
+            if (segment.isWordLike) {
+                const wordObj = {
+                    text: segment.segment,
+                    globalIndex: globalIndex,
+                    cleanText: segment.segment.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '')
+                };
+                wordsInSentence.push(wordObj);
+                wordTokens.push(wordObj);
+                
+                const wordSpan = document.createElement('span');
+                wordSpan.className = 'word-token word-future';
+                wordSpan.dataset.globalIndex = globalIndex;
+                
+                const noteText = script.annotations[globalIndex] || '';
+                
+                wordSpan.innerHTML = `
+                    <span class="word-text">${wordObj.text}</span>
+                    <span class="word-note" id="note-${globalIndex}">${noteText}</span>
+                `;
+
+                wordSpan.onclick = () => jumpToWord(wordObj.globalIndex);
+                wordSpan.oncontextmenu = (e) => {
+                    e.preventDefault(); 
+                    openNoteModal(wordObj.globalIndex, wordObj.text);
+                };
+                makeDraggable(wordSpan, wordObj.text);
+
+                sentenceSpan.appendChild(wordSpan);
+                globalIndex++;
+            } else {
+                const puncSpan = document.createElement('span');
+                puncSpan.className = 'inline-flex flex-col items-center justify-start px-0.5 mx-0.5 cursor-default transition-colors duration-300';
+                puncSpan.style.color = 'inherit';
+                puncSpan.innerHTML = `
+                    <span class="word-text">${segment.segment}</span>
+                    <span class="word-note"></span>
+                `;
+                sentenceSpan.appendChild(puncSpan);
+            }
+        });
+
+        parsedData.push({ sentenceIndex: sIndex, words: wordsInSentence });
+        container.appendChild(sentenceSpan);
+    });
+
+    currentWordIndex = 0;
+    targetWordIndex = 0;
+    isCatchingUp = false;
+    isUserTracking = false; 
+    clearTimeout(animationTimer);
+    
+    updatePrompterUI(true); 
+    updateMicUI();
+    initStickyNote();
+}
+
+function openNoteModal(index, wordText) {
+    currentEditingNoteIndex = index;
+    const script = scripts.find(s => s.id === currentScriptId);
+    const currentNote = script.annotations[index] || "";
+    
+    document.getElementById('note-word-display').innerText = wordText;
+    const inputEl = document.getElementById('note-input');
+    inputEl.value = currentNote;
+    
+    const modal = document.getElementById('note-modal');
+    modal.classList.remove('hidden');
+    
+    setTimeout(() => inputEl.focus(), 100);
+}
+
+function closeNoteModal() {
+    const modal = document.getElementById('note-modal');
+    modal.style.opacity = '0';
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.style.opacity = '';
+        currentEditingNoteIndex = null;
+    }, 300);
+}
+
+function handleNoteEnter(e) { if (e.key === 'Enter') saveNote(); }
+
+function saveNote() {
+    if (currentEditingNoteIndex === null) return;
+    const index = currentEditingNoteIndex;
+    const newNote = document.getElementById('note-input').value.trim();
+    const script = scripts.find(s => s.id === currentScriptId);
+    
+    if (newNote === "") delete script.annotations[index];
+    else script.annotations[index] = newNote;
+    
+    saveScriptsToLocal();
+    const noteEl = document.getElementById(`note-${index}`);
+    if (noteEl) noteEl.innerText = newNote;
+    closeNoteModal();
+}
+
+function updatePrompterUI(forceScrollToTop = false) {
+    let activeSentenceFound = false;
+    let activeSentenceId = null;
+    let isLastWordOfSentence = false;
+    let nextSentenceId = null;
+
+    parsedData.forEach(sentence => {
+        const sentenceEl = document.getElementById(`sentence-${sentence.sentenceIndex}`);
+        if (!sentenceEl) return;
+        
+        const isCurrentSentence = sentence.words.some(w => w.globalIndex === currentWordIndex);
+        const isPastSentence = sentence.words[sentence.words.length - 1]?.globalIndex < currentWordIndex;
+
+        if (isCurrentSentence) {
+            sentenceEl.className = 'sentence-block sentence-active';
+            activeSentenceId = sentenceEl.id;
+            activeSentenceFound = true;
+            
+            if (sentence.words.length > 0 && sentence.words[sentence.words.length - 1].globalIndex === currentWordIndex) {
+                isLastWordOfSentence = true;
+                if (sentence.sentenceIndex + 1 < parsedData.length) {
+                    nextSentenceId = `sentence-${sentence.sentenceIndex + 1}`;
+                }
+            }
+        } else if (isPastSentence) {
+            sentenceEl.className = 'sentence-block sentence-past';
+        } else {
+            sentenceEl.className = 'sentence-block sentence-future';
+        }
+
+        sentence.words.forEach(word => {
+            const wordEl = document.querySelector(`[data-global-index="${word.globalIndex}"]`);
+            if (!wordEl) return;
+            if (word.globalIndex === currentWordIndex) {
+                wordEl.className = 'word-token word-active';
+            } else if (word.globalIndex < currentWordIndex) {
+                wordEl.className = 'word-token word-past';
+            } else {
+                wordEl.className = 'word-token word-future';
+            }
+        });
+    });
+
+    const scrollContainer = document.getElementById('present-scroll-container');
+
+    if (forceScrollToTop) {
+        scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (activeSentenceFound) {
+        if (isLastWordOfSentence && nextSentenceId) {
+            const nextEl = document.getElementById(nextSentenceId);
+            if (nextEl) nextEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else if (activeSentenceId && !isLastWordOfSentence) {
+            const el = document.getElementById(activeSentenceId);
+            const elRect = el.getBoundingClientRect();
+            const containerRect = scrollContainer.getBoundingClientRect();
+            
+            if (elRect.top < containerRect.top + containerRect.height * 0.2 || 
+                elRect.bottom > containerRect.bottom - containerRect.height * 0.4) {
+                 el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }
+}
+
+// 即时跳跃式高亮：直接跳到目标词，无逐帧延迟
+function catchUpHighlight() {
+    if (currentWordIndex >= targetWordIndex) { isCatchingUp = false; return; }
+    isCatchingUp = true;
+    // 若差距超过 3 词，直接跳到目标（消除累积延迟）
+    // 差距在 1-3 词内保留一帧动画，视觉上不突兀
+    const gap = targetWordIndex - currentWordIndex;
+    if (gap > 3) {
+        currentWordIndex = targetWordIndex;
+        isCatchingUp = false;
+        updatePrompterUI();
+        updateMiniWindow();
+        if (pipWindow && !pipWindow.closed) renderPiP();
+    } else {
+        currentWordIndex++;
+        updatePrompterUI();
+        updateMiniWindow();
+        if (pipWindow && !pipWindow.closed) renderPiP();
+        if (currentWordIndex < targetWordIndex) {
+            animationTimer = setTimeout(catchUpHighlight, 40);
+        } else {
+            isCatchingUp = false;
+        }
+    }
+}
+
+function jumpToWord(index) { 
+    clearTimeout(animationTimer);
+    isCatchingUp = false;
+    currentWordIndex = index; 
+    targetWordIndex = index; 
+    updatePrompterUI(); 
+    updateMiniWindow();
+    if (pipWindow && !pipWindow.closed) renderPiP();
+}
+
+function resetTracker() { 
+    clearTimeout(animationTimer);
+    isCatchingUp = false;
+    currentWordIndex = 0; 
+    targetWordIndex = 0; 
+    updatePrompterUI(true); 
+    updateMiniWindow();
+}
+
+function levenshteinDistance(a, b) {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+function isFuzzyMatch(spoken, scriptWord) {
+    if (spoken === scriptWord) return true;
+    const len = Math.max(spoken.length, scriptWord.length);
+    const dist = levenshteinDistance(spoken, scriptWord);
+    
+    const isChinese = /[\u4e00-\u9fa5]/.test(spoken) || /[\u4e00-\u9fa5]/.test(scriptWord);
+    if (isChinese) {
+        if (len <= 1) return dist <= 0;
+        if (len <= 2) return dist <= 1; 
+        if (len <= 4) return dist <= 2; 
+        return dist <= 3;
+    } else {
+        if (len <= 3) return dist <= 0;      
+        if (len <= 5) return dist <= 1;      
+        if (len <= 8) return dist <= 2;      
+        return dist <= 3;  
+    }
+}
+
+// 引擎底层控制
+function initSpeechRecognition(lang) {
+    const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI) {
+        showError("您的浏览器不支持语音引擎。请使用 Chrome, Edge 或 Safari。");
+        return;
+    }
+    if (recognition) {
+        recognition.onend = null; 
+        recognition.abort();
+    }
+
+    recognition = new SpeechRecognitionAPI();
+    recognition.continuous = true;
+    recognition.interimResults = true; 
+    recognition.lang = lang;
+
+    recognition.onstart = () => { 
+        isEngineRunning = true; 
+        hideError();
+        
+        // 引擎启动成功，注销加载动画
+        const loader = document.getElementById('engine-loader');
+        if (!loader.classList.contains('hidden')) {
+            document.getElementById('loader-progress').style.width = '100%';
+            document.getElementById('loader-text').innerText = '引擎完全就绪，随时可以开始 (100%)';
+            setTimeout(() => {
+                loader.style.opacity = '0';
+                setTimeout(() => {
+                    loader.classList.add('hidden');
+                    loader.style.opacity = '1';
+                }, 300);
+            }, 500);
+        }
+    };
+
+    recognition.onresult = (event) => {
+        // 核心：引擎常驻但在后台静默运行。只有门闸（isUserTracking）打开时才把数据送入大脑
+        if (!isUserTracking) return;
+
+        const segmenter = new Intl.Segmenter(lang, { granularity: 'word' });
+
+        // 【零延迟策略】优先取最新一段结果（无论 interim/final），立即匹配
+        // 不累积所有历史 transcript，避免词表膨胀拖慢匹配
+        const latestResult = event.results[event.results.length - 1];
+        const latestTranscript = latestResult[0].transcript;
+
+        if (!latestTranscript.trim()) return;
+
+        const latestWords = Array.from(segmenter.segment(latestTranscript))
+            .filter(s => s.isWordLike)
+            .map(s => s.segment.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, ''));
+
+        if (latestWords.length > 0) processSpeechMatching(latestWords);
+
+        // final result：额外用前面已确认的段做一次补充校准，防止 interim 误识别漏推
+        if (latestResult.isFinal && event.results.length >= 2) {
+            let confirmedTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length - 1; ++i) {
+                if (event.results[i].isFinal) confirmedTranscript += event.results[i][0].transcript + ' ';
+            }
+            confirmedTranscript += latestTranscript;
+            if (confirmedTranscript.trim()) {
+                const confirmedWords = Array.from(segmenter.segment(confirmedTranscript))
+                    .filter(s => s.isWordLike)
+                    .map(s => s.segment.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, ''));
+                if (confirmedWords.length > 0) processSpeechMatching(confirmedWords);
+            }
+        }
+    };
+
+    recognition.onerror = (e) => { 
+        if (e.error === 'not-allowed') {
+            stopEngineCompletely(); 
+            document.getElementById('engine-loader').classList.add('hidden');
+            showError("麦克风权限被拒绝，请在浏览器设置中允许访问。");
+        }
+    };
+    
+    recognition.onend = () => {
+        isEngineRunning = false;
+        // 如果用户还在提词界面，让引擎默默重启保持常驻待命状态
+        if (currentView === 'present') {
+            try { recognition.start(); } catch(e) {}
+        } else {
+            isUserTracking = false; 
+            updateMicUI();
+        }
+    };
+
+    try { recognition.start(); } catch(e) {}
+}
+
+// 辅助检索序列（从起点开始向下找，天然具备“就近原则”）
+function fuzzyFindSequence(seqToFind, searchStart, searchEnd) {
+    if (seqToFind.length === 0) return -1;
+    for (let i = searchStart; i <= searchEnd - seqToFind.length; i++) {
+        let matchCount = 0;
+        for (let j = 0; j < seqToFind.length; j++) {
+            if (wordTokens[i + j] && isFuzzyMatch(seqToFind[j], wordTokens[i + j].cleanText)) {
+                matchCount++;
+            }
+        }
+        if (matchCount === seqToFind.length) return i + seqToFind.length - 1; 
+    }
+    return -1;
+}
+
+// 修复重复词跳跃的核心大脑机制
+function processSpeechMatching(spokenWords) {
+    if (spokenWords.length === 0) return;
+
+    // 保留最新的 6 个词进行核对
+    const recentSpoken = spokenWords.slice(-6);
+    const latestWord = recentSpoken[recentSpoken.length - 1];
+    const prevWord = recentSpoken.length > 1 ? recentSpoken[recentSpoken.length - 2] : null;
+
+    let matched = false;
+
+    // 【阶段 A：零延迟前置探针】
+    // 严格限制：只往后看 2 个词（即最多允许由于卡顿跳过1个未识别词）
+    // 完美解决由于前后重复导致的跳句问题：遇到重复词它永远只会先抓住眼前的第一个。
+    for (let i = targetWordIndex; i <= targetWordIndex + 2 && i < wordTokens.length; i++) {
+        const expectedWord = wordTokens[i].cleanText;
+        
+        if (isFuzzyMatch(latestWord, expectedWord)) {
+            targetWordIndex = i + 1; // 更新大脑指针
+            matched = true;
+            break;
+        }
+        if (prevWord && isFuzzyMatch(prevWord, expectedWord)) {
+            targetWordIndex = i + 1;
+            matched = true;
+            break;
+        }
+    }
+
+    // 一旦大脑进度被推进，立刻触发平滑且极速的拉链式动画，保证UI不生硬
+    if (matched) {
+        if (!isCatchingUp) catchUpHighlight();
+        return; 
+    }
+
+    // 【阶段 B：动态视野序列检索 (防跳跃保护网)】
+    let bestMatchIndex = -1;
+    const startIndex = Math.max(0, targetWordIndex - 2); 
+
+    for (let seqLen = Math.min(5, recentSpoken.length); seqLen >= 2; seqLen--) {
+        // 核心修复点：基于听到的长短动态伸缩视野
+        // 如果听到了 2 个词匹配，最多只准往后查 5 个词。
+        // 如果听到了 4 个以上的词连在一起完全一样，才被允许跳跃到后面的句子（说明是真的念错段落了）
+        let dynamicWindow = (seqLen === 2) ? 8 : ((seqLen === 3) ? 14 : 28);
+        let endIndex = Math.min(targetWordIndex + dynamicWindow, wordTokens.length);
+
+        for (let offset = 0; offset <= Math.min(2, recentSpoken.length - seqLen); offset++) {
+            const seqToFind = recentSpoken.slice(recentSpoken.length - seqLen - offset, recentSpoken.length - offset);
+            const match = fuzzyFindSequence(seqToFind, startIndex, endIndex);
+            if (match !== -1) { 
+                bestMatchIndex = match; 
+                break; 
+            }
+        }
+        if (bestMatchIndex !== -1) break;
+    }
+
+    // 【阶段 C：极短单词的强行纠错】
+    if (bestMatchIndex === -1 && recentSpoken.length >= 1) {
+        const stopWords = ['的','了','我','你','他','她','它','是','在','a','an','the','is','am','are','to','and','of','in','on','it','i'];
+        for(let k = 1; k <= Math.min(3, recentSpoken.length); k++) {
+            const singleWord = recentSpoken[recentSpoken.length - k];
+            if (!stopWords.includes(singleWord)) {
+                // 对于零散的单一单词，视野被极其严格地限制为只看接下来的 4 个词
+                const match = fuzzyFindSequence([singleWord], targetWordIndex, Math.min(targetWordIndex + 4, wordTokens.length));
+                if (match !== -1) { 
+                    bestMatchIndex = match; 
+                    break; 
+                }
+            }
+        }
+    }
+
+    if (bestMatchIndex !== -1 && bestMatchIndex >= targetWordIndex) {
+        targetWordIndex = bestMatchIndex + 1;
+        if (!isCatchingUp) catchUpHighlight();
+    }
+}
+
+function toggleListening() { 
+    if (isUserTracking) {
+        isUserTracking = false;
+        updateMicUI();
+    } else {
+        isUserTracking = true;
+        updateMicUI();
+        if (!isEngineRunning && recognition) {
+            try { recognition.start(); } catch(e) {}
+        }
+    } 
+}
+
+function stopEngineCompletely() { 
+    isUserTracking = false; 
+    isEngineRunning = false;
+    if (recognition) {
+        recognition.onend = null;
+        recognition.stop();
+    }
+    updateMicUI(); 
+}
+
+function updateMicUI() {
+    const btn = document.getElementById('btn-mic');
+    const iconContainer = document.getElementById('mic-icon-container');
+    const textEl = document.getElementById('mic-text');
+    if (isUserTracking) {
+        btn.className = "flex items-center justify-center space-x-2 px-6 py-4 rounded-xl font-bold text-white transition-all shadow-lg shadow-red-500/30 bg-red-500 hover:bg-red-600 active:scale-95 w-full";
+        iconContainer.innerHTML = `<svg class="animate-pulse" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect width="14" height="14" x="5" y="5" rx="3" ry="3"/></svg>`;
+        textEl.innerText = "倾听中 (零延迟跟进)";
+    } else {
+        btn.className = "flex items-center justify-center space-x-2 px-6 py-4 rounded-xl font-bold text-white transition-all shadow-md shadow-indigo-600/20 bg-indigo-600 hover:bg-indigo-700 active:scale-95 w-full";
+        iconContainer.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`;
+        textEl.innerText = "开始追踪";
+    }
+}
+
+function showError(msg) { 
+    document.getElementById('error-msg').innerText = msg;
+    document.getElementById('error-banner').classList.remove('hidden'); 
+}
+function hideError() { document.getElementById('error-banner').classList.add('hidden'); }
+
+
+// ===================== 小窗模式 =====================
+let isMiniMode = false;
+const MINI_BREAKPOINT = 600; // px
+
+function checkMiniMode() {
+    if (currentView !== 'present') return;
+    const shouldMini = window.innerWidth < MINI_BREAKPOINT;
+    if (shouldMini && !isMiniMode) showMiniWindow();
+    else if (!shouldMini && isMiniMode) hideMiniWindow();
+}
+
+function showMiniWindow() {
+    isMiniMode = true;
+    document.getElementById('mini-window').classList.add('visible');
+    // 隐藏主界面 header 和 present 面板（保留但不显示）
+    document.getElementById('main-header').style.display = 'none';
+    const vp = document.getElementById('view-present');
+    if (vp) vp.style.visibility = 'hidden';
+    updateMiniWindow();
+    initMiniDrag();
+}
+
+function hideMiniWindow() {
+    isMiniMode = false;
+    const mw = document.getElementById('mini-window');
+    mw.style.opacity = '0';
+    mw.style.transform = 'scale(0.92) translateY(12px)';
+    setTimeout(() => {
+        mw.classList.remove('visible');
+        mw.style.opacity = '';
+        mw.style.transform = '';
+    }, 300);
+    document.getElementById('main-header').style.display = '';
+    const vp = document.getElementById('view-present');
+    if (vp) vp.style.visibility = '';
+}
+
+function updateMiniWindow() {
+    if (!isMiniMode || currentView !== 'present') return;
+
+    // 找到当前所在句子索引
+    let activeSentIdx = -1;
+    for (let i = 0; i < parsedData.length; i++) {
+        if (parsedData[i].words.some(w => w.globalIndex === currentWordIndex)) {
+            activeSentIdx = i; break;
+        }
+        if (parsedData[i].words.length > 0 &&
+            parsedData[i].words[parsedData[i].words.length-1].globalIndex < currentWordIndex) {
+            activeSentIdx = i; // keep updating — last past sentence
+        }
+    }
+
+    function sentText(idx) {
+        if (idx < 0 || idx >= parsedData.length) return '';
+        return parsedData[idx].words.map(w => w.text).join(' ');
+    }
+
+    // 当前句：用 span 渲染已读/当前/未读词，模拟大窗荧光高亮
+    const activeEl = document.getElementById('mini-active');
+    if (activeSentIdx >= 0) {
+        const words = parsedData[activeSentIdx].words;
+        activeEl.innerHTML = words.map(w => {
+            if (w.globalIndex < currentWordIndex)
+                return `<span class="mini-word-past">${w.text}</span>`;
+            if (w.globalIndex === currentWordIndex)
+                return `<span class="mini-word-active">${w.text}</span>`;
+            return `<span class="mini-word-future">${w.text}</span>`;
+        }).join(' ');
+    } else {
+        activeEl.textContent = '';
+    }
+
+    document.getElementById('mini-past2').textContent  = sentText(activeSentIdx - 2);
+    document.getElementById('mini-prev').textContent   = sentText(activeSentIdx - 1);
+    document.getElementById('mini-next').textContent   = sentText(activeSentIdx + 1);
+    document.getElementById('mini-future').textContent = sentText(activeSentIdx + 2);
+
+    // 进度条
+    const total = wordTokens.length;
+    const pct = total > 0 ? Math.round((currentWordIndex / total) * 100) : 0;
+    document.getElementById('mini-progress-fill').style.width = pct + '%';
+}
+
+// 拖动支持
+function initMiniDrag() {
+    const win = document.getElementById('mini-window');
+    const bar = document.getElementById('mini-drag-bar');
+    let dragging = false, ox = 0, oy = 0;
+
+    bar.onmousedown = (e) => {
+        if (e.target.tagName === 'SPAN') return; // 按钮不触发拖动
+        dragging = true;
+        ox = e.clientX - win.offsetLeft;
+        oy = e.clientY - win.offsetTop;
+        win.style.right = 'auto';
+        win.style.bottom = 'auto';
+        e.preventDefault();
+    };
+    document.onmousemove = (e) => {
+        if (!dragging) return;
+        win.style.left = (e.clientX - ox) + 'px';
+        win.style.top  = (e.clientY - oy) + 'px';
+    };
+    document.onmouseup = () => { dragging = false; };
+}
+
+
+// ===================== 画中画模式 =====================
+let pipWindow = null;
+let pipUpdateInterval = null;
+
+// 画中画：当前显示的句子索引（可通过滚轮或自动推进修改）
+let pipViewSentIdx = -1;
+let pipLastAutoSentIdx = -1; // 记录上一次自动推进时的句子，避免重复触发
+
+async function togglePiP() {
+    if (pipWindow && !pipWindow.closed) {
+        pipWindow.close();
+        return;
+    }
+
+    if (!('documentPictureInPicture' in window)) {
+        alert('您的浏览器不支持画中画模式（需要 Chrome 116+）。\n\n提示：可以将浏览器小窗口拖到屏幕边角代替。');
+        return;
+    }
+
+    try {
+        pipWindow = await window.documentPictureInPicture.requestWindow({
+            width: 440,
+            height: 230,
+            disallowReturnToOpener: false,
+        });
+
+        const style = pipWindow.document.createElement('style');
+        style.textContent = `
+            * { margin:0; padding:0; box-sizing:border-box; user-select: none; -webkit-user-select: none; }
+            body {
+                background: rgba(12,15,26,0.97);
+                font-family: 'Inter', system-ui, sans-serif;
+                color: white;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                padding: 14px 20px 42px;
+                overflow: hidden;
+                cursor: default;
+            }
+            .pip-line {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                line-height: 1.55;
+                transition: opacity 0.2s, font-size 0.2s;
+                padding: 1px 0;
+            }
+            .pip-past   { color: rgba(255,255,255,0.15); font-size: 0.7rem; }
+            .pip-prev   { color: rgba(255,255,255,0.3); font-size: 0.83rem; margin-bottom: 3px; }
+            .pip-active {
+                font-size: 1.08rem; font-weight: 700;
+                margin: 3px 0;
+                white-space: normal; line-height: 1.65;
+                padding: 4px 8px;
+                border-radius: 8px;
+                background: rgba(253,224,71,0.06);
+                border-left: 2px solid rgba(253,224,71,0.4);
+                cursor: pointer;
+            }
+            .pip-active:hover { background: rgba(253,224,71,0.1); }
+            .pip-next   { color: rgba(255,255,255,0.3); font-size: 0.83rem; margin-top: 3px; }
+            .pip-future { color: rgba(255,255,255,0.15); font-size: 0.7rem; }
+            .pip-w-past    { color: rgba(255,255,255,0.2); }
+            .pip-w-active  {
+                background: #fde047; color: #0f172a;
+                border-radius: 4px; padding: 1px 5px;
+                font-weight: 800;
+                box-shadow: 0 2px 12px rgba(253,224,71,0.5);
+                cursor: pointer;
+            }
+            .pip-w-active:hover { background: #fef08a; }
+            .pip-w-future  { color: rgba(255,255,255,0.72); cursor: pointer; }
+            .pip-w-future:hover { color: #fff; }
+            .pip-scroll-hint {
+                position: absolute; top: 6px; right: 10px;
+                font-size: 0.58rem; color: rgba(255,255,255,0.2);
+                letter-spacing: 0.04em;
+                pointer-events: none;
+            }
+            .pip-progress {
+                position: absolute; bottom: 0; left: 0; right: 0;
+                height: 2px; background: rgba(255,255,255,0.06);
+            }
+            .pip-progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #6366f1, #fde047);
+                transition: width 0.35s ease;
+            }
+            .pip-auto-badge {
+                position: absolute; top: 7px; left: 10px;
+                font-size: 0.58rem; color: rgba(99,102,241,0.5);
+                letter-spacing: 0.04em;
+                transition: opacity 0.4s;
+            }
+            /* 追踪控制栏 */
+            .pip-track-bar {
+                position: absolute;
+                bottom: 6px;
+                left: 50%;
+                transform: translateX(-50%);
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                z-index: 10;
+            }
+            .pip-track-btn {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                padding: 4px 12px 4px 9px;
+                border-radius: 20px;
+                border: 1px solid rgba(99,102,241,0.35);
+                background: rgba(99,102,241,0.12);
+                color: rgba(180,185,255,0.85);
+                font-size: 0.65rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                cursor: pointer;
+                transition: all 0.18s ease;
+                white-space: nowrap;
+                user-select: none;
+            }
+            .pip-track-btn:hover {
+                background: rgba(99,102,241,0.25);
+                border-color: rgba(99,102,241,0.6);
+                color: #fff;
+                transform: scale(1.04);
+            }
+            .pip-track-btn.active {
+                background: rgba(239,68,68,0.18);
+                border-color: rgba(239,68,68,0.5);
+                color: rgba(255,160,160,0.95);
+            }
+            .pip-track-btn.active:hover {
+                background: rgba(239,68,68,0.3);
+            }
+            .pip-track-dot {
+                width: 6px; height: 6px;
+                border-radius: 50%;
+                background: currentColor;
+                flex-shrink: 0;
+            }
+            .pip-track-btn.active .pip-track-dot {
+                animation: pipPulse 1.1s ease-in-out infinite;
+            }
+            @keyframes pipPulse {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.4; transform: scale(0.7); }
+            }
+        `;
+        pipWindow.document.head.appendChild(style);
+
+        const fontLink = pipWindow.document.createElement('link');
+        fontLink.rel = 'stylesheet';
+        fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
+        pipWindow.document.head.appendChild(fontLink);
+
+        pipWindow.document.body.innerHTML = `
+            <div class="pip-auto-badge" id="pip-auto-badge">● 自动跟进</div>
+            <div class="pip-scroll-hint">滚轮翻句 · 点词校准</div>
+            <div class="pip-line pip-past"   id="pip-past2"></div>
+            <div class="pip-line pip-prev"   id="pip-prev"></div>
+            <div class="pip-line pip-active" id="pip-active"></div>
+            <div class="pip-line pip-next"   id="pip-next"></div>
+            <div class="pip-line pip-future" id="pip-future"></div>
+            <div class="pip-track-bar">
+                <button class="pip-track-btn" id="pip-track-btn" onclick="window._pipToggleTracking()">
+                    <span class="pip-track-dot"></span>
+                    <span id="pip-track-label">开始追踪</span>
+                </button>
+            </div>
+            <div class="pip-progress"><div class="pip-progress-fill" id="pip-fill" style="width:0%"></div></div>
+        `;
+
+        // 初始化视图句子索引
+        pipViewSentIdx = -1;
+        pipLastAutoSentIdx = -1;
+
+        // ---- 桥接主窗口追踪控制（闭包直接引用，不依赖 opener）----
+        pipWindow._pipToggleTracking = function() {
+            toggleListening();          // 直接调用主窗口作用域内的函数
+            _renderPiPNow();            // 立即刷新按钮状态，无需等下一个 interval
+        };
+
+        // ---- 滚轮翻句 ----
+        pipWindow.document.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const dir = e.deltaY > 0 ? 1 : -1;
+            const cur = getPipActiveSentIdx();
+            const target = Math.max(0, Math.min(parsedData.length - 1, cur + dir));
+            pipViewSentIdx = target;
+            renderPiP();
+        }, { passive: false });
+
+        // ---- 点词校准：单击词语立即校准，光标落在该词上 ----
+        pipWindow.document.addEventListener('click', (e) => {
+            // 向上找最近的有 data-gidx 属性的元素（解决点击边缘时 target 是容器的问题）
+            const wordEl = e.target.closest('[data-gidx]');
+            if (!wordEl) return;
+            const gidx = wordEl.dataset.gidx;
+            if (gidx === undefined || gidx === '') return;
+            const idx = parseInt(gidx);
+            if (isNaN(idx)) return;
+
+            // 直接更新状态，rAF 合并机制保证高亮立即渲染
+            pipViewSentIdx = -1;
+            clearTimeout(animationTimer);
+            isCatchingUp = false;
+            currentWordIndex = idx;
+            targetWordIndex = idx;
+            _pipRafPending = false;  // 取消任何排队中的 rAF 重绘，立即重绘
+            updatePrompterUI();
+            updateMiniWindow();
+            _renderPiPNow();         // 立即重绘，高亮准确落在点击词上
+        });
+
+        updatePiP();
+        pipUpdateInterval = setInterval(updatePiP, 40);
+
+        pipWindow.addEventListener('pagehide', () => {
+            clearInterval(pipUpdateInterval);
+            pipWindow = null;
+            pipViewSentIdx = -1;
+            const btn = document.getElementById('pip-btn');
+            if (btn) btn.textContent = '⧉ 画中画';
+            const sb = document.getElementById('pip-sidebar-btn');
+            if (sb) sb.querySelector('span').textContent = '画中画悬浮';
+        });
+
+        document.getElementById('pip-btn').textContent = '⧉ 关闭画中画';
+        const sb = document.getElementById('pip-sidebar-btn');
+        if (sb) sb.querySelector('span').textContent = '关闭画中画';
+
+    } catch(e) {
+        console.error('PiP failed:', e);
+        alert('无法开启画中画：' + e.message);
+    }
+}
+
+// 获取当前语音追踪到的句子索引
+function getTrackedSentIdx() {
+    let idx = -1;
+    for (let i = 0; i < parsedData.length; i++) {
+        if (parsedData[i].words.some(w => w.globalIndex === currentWordIndex)) return i;
+        if (parsedData[i].words.length > 0 && parsedData[i].words[parsedData[i].words.length - 1].globalIndex < currentWordIndex) idx = i;
+    }
+    return idx;
+}
+
+// 画中画实际显示的句子（滚轮偏移 or 自动跟踪）
+function getPipActiveSentIdx() {
+    if (pipViewSentIdx >= 0) return pipViewSentIdx;
+    return getTrackedSentIdx();
+}
+
+let _pipRafPending = false;
+function renderPiP() {
+    if (!pipWindow || pipWindow.closed) return;
+    // 合并同一帧内的多次调用，避免 interval 和点击同帧双重重建 DOM
+    if (_pipRafPending) return;
+    _pipRafPending = true;
+    requestAnimationFrame(() => {
+        _pipRafPending = false;
+        _renderPiPNow();
+    });
+}
+function _renderPiPNow() {
+    if (!pipWindow || pipWindow.closed) return;
+    const d = pipWindow.document;
+
+    const activeSentIdx = getPipActiveSentIdx();
+    const trackedSentIdx = getTrackedSentIdx();
+
+    function sentText(idx) {
+        if (idx < 0 || idx >= parsedData.length) return '';
+        return parsedData[idx].words.map(w => w.text).join(' ');
+    }
+
+    // 上下文纯文本行
+    const setT = (id, text) => { const el = d.getElementById(id); if(el) el.textContent = text; };
+    setT('pip-past2', sentText(activeSentIdx - 2));
+    setT('pip-prev',  sentText(activeSentIdx - 1));
+    setT('pip-next',  sentText(activeSentIdx + 1));
+    setT('pip-future', sentText(activeSentIdx + 2));
+
+    // 当前句：带高亮的词 span，每个词附带 data-gidx 用于点击校准
+    const activeEl = d.getElementById('pip-active');
+    if (activeEl && activeSentIdx >= 0) {
+        const words = parsedData[activeSentIdx].words;
+        activeEl.innerHTML = words.map((w, i) => {
+            const g = w.globalIndex;
+            const space = i < words.length - 1 ? '<span style="color:inherit;opacity:0.4;"> </span>' : '';
+            if (g < currentWordIndex)
+                return `<span class="pip-w-past" data-gidx="${g}">${w.text}</span>${space}`;
+            if (g === currentWordIndex)
+                return `<span class="pip-w-active" data-gidx="${g}">${w.text}</span>${space}`;
+            return `<span class="pip-w-future" data-gidx="${g}">${w.text}</span>${space}`;
+        }).join('');
+    } else if (activeEl) {
+        activeEl.innerHTML = '';
+    }
+
+    // 自动跟随徽章：若用户手动滚轮偏移了，淡出
+    const badge = d.getElementById('pip-auto-badge');
+    if (badge) {
+        badge.style.opacity = (pipViewSentIdx < 0) ? '1' : '0';
+    }
+
+    // 进度条
+    const total = wordTokens.length;
+    const pct = total > 0 ? Math.round((currentWordIndex / total) * 100) : 0;
+    const fill = d.getElementById('pip-fill');
+    if (fill) fill.style.width = pct + '%';
+
+    // 追踪按钮状态同步
+    const trackBtn = d.getElementById('pip-track-btn');
+    const trackLabel = d.getElementById('pip-track-label');
+    if (trackBtn && trackLabel) {
+        if (isUserTracking) {
+            trackBtn.classList.add('active');
+            trackLabel.textContent = '倾听中…';
+        } else {
+            trackBtn.classList.remove('active');
+            trackLabel.textContent = '开始追踪';
+        }
+    }
+}
+
+function updatePiP() {
+    if (!pipWindow || pipWindow.closed) {
+        clearInterval(pipUpdateInterval);
+        const btn = document.getElementById('pip-btn');
+        if (btn) btn.textContent = '⧉ 画中画';
+        return;
+    }
+    if (parsedData.length === 0) return;
+
+    const trackedSentIdx = getTrackedSentIdx();
+
+    // 自动推进：当读完某句最后一个词时，若用户没有手动滚动，自动切到下一句显示
+    // 用 pipLastAutoSentIdx 防止在同一句末尾反复触发
+    if (trackedSentIdx >= 0 && trackedSentIdx !== pipLastAutoSentIdx) {
+        const sent = parsedData[trackedSentIdx];
+        if (sent && sent.words.length > 0) {
+            const lastWordIdx = sent.words[sent.words.length - 1].globalIndex;
+            if (currentWordIndex > lastWordIdx) {
+                // 已读完这句，自动重置偏移让视图跟随到下一句
+                pipLastAutoSentIdx = trackedSentIdx;
+                pipViewSentIdx = -1;
+            }
+        }
+    }
+
+    renderPiP();
+}
+// =====================================================
+
+// 监听窗口大小变化
+window.addEventListener('resize', checkMiniMode);
+// =====================================================
+
+window.onload = init;
+
+// ===================== 便利贴模块 =====================
+
+function initStickyNote() {
+    // 恢复文本区内容
+    const savedText = localStorage.getItem('vocalflow_sticky_text') || '';
+    const ta = document.getElementById('sticky-note-textarea');
+    if (ta) ta.value = savedText;
+
+    // 克隆节点以清除所有旧的事件监听器，防止重复绑定
+    const dropZone = document.getElementById('sticky-drop-zone');
+    if (!dropZone) return;
+    const newZone = dropZone.cloneNode(true);
+    dropZone.parentNode.replaceChild(newZone, dropZone);
+
+    newZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        newZone.classList.add('drag-over');
+    });
+    newZone.addEventListener('dragleave', () => {
+        newZone.classList.remove('drag-over');
+    });
+    newZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        newZone.classList.remove('drag-over');
+        const word = e.dataTransfer.getData('text/plain');
+        if (word) addWordToSticky(word);
+    });
+}
+
+function makeDraggable(wordSpan, wordText) {
+    wordSpan.setAttribute('draggable', 'true');
+    wordSpan.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', wordText);
+        e.dataTransfer.effectAllowed = 'copy';
+        wordSpan.classList.add('dragging');
+    });
+    wordSpan.addEventListener('dragend', () => {
+        wordSpan.classList.remove('dragging');
+    });
+}
+
+function addWordToSticky(word) {
+    // 先在笔记中插入占位行
+    const ta = document.getElementById('sticky-note-textarea');
+    const placeholder = `${word} → 翻译中...\n`;
+    ta.value += placeholder;
+    saveStickyNote();
+
+    // 调用翻译 API，完成后替换占位文字
+    translateWordInline(word, placeholder);
+}
+
+async function translateWordInline(word, placeholder) {
+    try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|zh`;
+        const response = await fetch(url);
+        const data = await response.json();
+        const translation = data.responseData?.translatedText?.trim() || '—';
+        const ta = document.getElementById('sticky-note-textarea');
+        ta.value = ta.value.replace(placeholder, `${word} → ${translation}\n`);
+        saveStickyNote();
+    } catch (err) {
+        const ta = document.getElementById('sticky-note-textarea');
+        ta.value = ta.value.replace(placeholder, `${word} → 翻译失败\n`);
+        saveStickyNote();
+    }
+}
+
+
+
+function clearStickyNote() {
+    if (!confirm('确定清空便利贴所有内容？')) return;
+    const ta = document.getElementById('sticky-note-textarea');
+    if (ta) { ta.value = ''; localStorage.removeItem('vocalflow_sticky_text'); }
+}
+
+function saveStickyNote() {
+    const ta = document.getElementById('sticky-note-textarea');
+    if (ta) localStorage.setItem('vocalflow_sticky_text', ta.value);
+}
+
+
+// =====================================================
+</script>
+
+    <!-- 小窗模式 -->
+    <div id="mini-window">
+        <div id="mini-drag-bar">
+            <div id="mini-drag-dots">
+                <span id="mini-close-btn"   title="关闭小窗" style="cursor:pointer;" onclick="hideMiniWindow()"></span>
+                <span id="mini-min-btn"     title="最小化" style="cursor:pointer;"></span>
+                <span id="mini-expand-btn"  title="还原大窗" style="cursor:pointer;" onclick="hideMiniWindow()"></span>
+            </div>
+            <span id="mini-title">VocalFlow · 小窗</span>
+            <button onclick="togglePiP()" title="画中画 - 悬浮在所有窗口之上" id="pip-btn" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.35);font-size:0.65rem;font-weight:600;letter-spacing:0.04em;padding:2px 6px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);transition:all 0.2s;" onmouseover="this.style.color='rgba(255,255,255,0.8)'" onmouseout="this.style.color='rgba(255,255,255,0.35)'">⧉ 画中画</button>
+        </div>
+
+        <div id="mini-context-lines">
+            <div class="mini-line mini-line-past"   id="mini-past2"></div>
+            <div class="mini-line mini-line-prev"   id="mini-prev"></div>
+            <div class="mini-line mini-line-active" id="mini-active"></div>
+            <div class="mini-line mini-line-next"   id="mini-next"></div>
+            <div class="mini-line mini-line-future" id="mini-future"></div>
+        </div>
+
+        <div id="mini-progress-track">
+            <div id="mini-progress-fill" style="width:0%"></div>
+        </div>
+    </div>
+    <div id="mini-trigger-hint">缩小窗口 · 自动小窗</div>
+
+</body>
+</html>
