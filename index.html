@@ -315,6 +315,229 @@
             transition: opacity 0.3s;
         }
 
+        /* ===== 同声转录面板 ===== */
+        #transcript-panel {
+            position: sticky;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 30;
+            display: none; /* 默认隐藏，控制台开启后显示 */
+            flex-direction: column;
+            background: rgba(15, 20, 40, 0.97);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(99,102,241,0.18);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+            transition: height 0.32s cubic-bezier(0.4,0,0.2,1);
+            overflow: hidden;
+        }
+        #transcript-panel.panel-visible {
+            display: flex;
+        }
+        /* 收起状态：只露出拉手 */
+        #transcript-panel.panel-collapsed { height: 36px; }
+        /* 展开状态：约占演讲稿区域1/3，固定高度 */
+        #transcript-panel.panel-expanded  { height: 38vh; min-height: 200px; max-height: 420px; }
+
+        /* 拉手 */
+        #transcript-pull-tab {
+            flex-shrink: 0;
+            height: 36px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            transition: background 0.15s;
+        }
+        #transcript-pull-tab:hover { background: rgba(255,255,255,0.04); }
+        .transcript-tab-inner {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: rgba(255,255,255,0.4);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        #transcript-tab-icon {
+            transition: transform 0.3s ease;
+            color: rgba(99,102,241,0.7);
+        }
+        #transcript-panel.panel-expanded #transcript-tab-icon {
+            transform: rotate(180deg);
+        }
+        .transcript-status-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            transition: background 0.3s;
+        }
+        .transcript-status-dot.recording {
+            background: #ef4444;
+            animation: transcriptPulse 1.2s ease-in-out infinite;
+        }
+        @keyframes transcriptPulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+            50% { opacity: 0.7; box-shadow: 0 0 0 5px rgba(239,68,68,0); }
+        }
+
+        /* 面板内容区 */
+        #transcript-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+        #transcript-toolbar {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .transcript-record-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 14px 5px 10px;
+            border-radius: 20px;
+            border: 1px solid rgba(99,102,241,0.4);
+            background: rgba(99,102,241,0.14);
+            color: rgba(180,185,255,0.9);
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            white-space: nowrap;
+        }
+        .transcript-record-btn:hover {
+            background: rgba(99,102,241,0.28);
+            color: #fff;
+        }
+        .transcript-record-btn.recording {
+            border-color: rgba(239,68,68,0.5);
+            background: rgba(239,68,68,0.16);
+            color: rgba(255,160,160,0.95);
+        }
+        .transcript-record-btn.recording:hover {
+            background: rgba(239,68,68,0.28);
+        }
+        .transcript-action-btn {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.07);
+            background: transparent;
+            color: rgba(255,255,255,0.3);
+            font-size: 0.65rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .transcript-action-btn:hover {
+            background: rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.6);
+        }
+        .transcript-word-count {
+            margin-left: auto;
+            font-size: 0.62rem;
+            color: rgba(255,255,255,0.2);
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        /* 转录内容滚动区 */
+        #transcript-scroll-area {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 12px 20px 16px;
+            min-height: 0;
+        }
+        #transcript-scroll-area::-webkit-scrollbar { width: 4px; }
+        #transcript-scroll-area::-webkit-scrollbar-track { background: transparent; }
+        #transcript-scroll-area::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        #transcript-content {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .transcript-placeholder {
+            color: rgba(255,255,255,0.18);
+            font-size: 0.82rem;
+            font-style: italic;
+            text-align: center;
+            padding: 20px 0;
+        }
+        .transcript-segment {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            padding: 3px 0;
+            line-height: 1.65;
+            animation: transcriptFadeIn 0.2s ease;
+        }
+        @keyframes transcriptFadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .transcript-time {
+            flex-shrink: 0;
+            font-size: 0.6rem;
+            color: rgba(99,102,241,0.5);
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            margin-top: 2px;
+            font-variant-numeric: tabular-nums;
+            min-width: 38px;
+        }
+        .transcript-text {
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.82);
+            font-weight: 500;
+            word-break: break-word;
+        }
+        .transcript-text.interim {
+            color: rgba(255,255,255,0.38);
+            font-style: italic;
+        }
+
+        /* 跳到最新按钮 */
+        .transcript-jump-btn {
+            position: absolute;
+            bottom: 14px;
+            right: 18px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(99,102,241,0.35);
+            background: rgba(15,20,40,0.92);
+            color: rgba(180,185,255,0.9);
+            font-size: 0.65rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            letter-spacing: 0.04em;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+        .transcript-jump-btn:hover {
+            background: rgba(99,102,241,0.25);
+            color: #fff;
+        }
+        .transcript-jump-btn.hidden { display: none; }
+
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans h-screen overflow-hidden flex flex-col selection:bg-yellow-200 selection:text-slate-900">
@@ -412,6 +635,39 @@
             </div>
 
             <div id="present-scroll-container" class="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative">
+
+                <!-- 同声转录面板 -->
+                <div id="transcript-panel" class="transcript-panel">
+                    <div id="transcript-pull-tab" onclick="toggleTranscriptExpand()" title="展开/收起转录板">
+                        <div class="transcript-tab-inner">
+                            <svg id="transcript-tab-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                            <span id="transcript-tab-label">同声转录</span>
+                            <span id="transcript-status-dot" class="transcript-status-dot"></span>
+                        </div>
+                    </div>
+                    <div id="transcript-body">
+                        <div id="transcript-toolbar">
+                            <button id="transcript-record-btn" onclick="toggleTranscriptRecording()" class="transcript-record-btn">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                                <span id="transcript-record-label">开始转录</span>
+                            </button>
+                            <button onclick="clearTranscript()" class="transcript-action-btn" title="清空转录内容">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                清空
+                            </button>
+                            <div class="transcript-word-count" id="transcript-word-count">0 字</div>
+                        </div>
+                        <div id="transcript-scroll-area">
+                            <div id="transcript-content">
+                                <div class="transcript-placeholder">转录内容将出现在这里…</div>
+                            </div>
+                        </div>
+                        <button id="transcript-jump-btn" class="transcript-jump-btn hidden" onclick="jumpToTranscriptEnd()" title="跳到最新转录位置">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/><polyline points="6 15 12 21 18 15"/></svg>
+                            跳到最新
+                        </button>
+                    </div>
+                </div>
                 <div class="max-w-4xl mx-auto px-6 py-12 md:py-24 pb-[60vh]">
                     <div id="prompter-content" class="text-3xl md:text-5xl lg:text-[3.5rem] font-semibold text-slate-300 leading-tight">
                         </div>
@@ -436,6 +692,10 @@
                         <button onclick="togglePiP()" id="pip-sidebar-btn" class="flex items-center justify-center space-x-2 p-3.5 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-indigo-50 hover:text-indigo-600 transition-colors active:scale-95 w-full">
                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
                             <span>画中画悬浮</span>
+                        </button>
+                        <button onclick="toggleTranscriptPanel()" id="transcript-sidebar-btn" class="flex items-center justify-center space-x-2 p-3.5 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-emerald-50 hover:text-emerald-600 transition-colors active:scale-95 w-full">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                            <span>同声转录</span>
                         </button>
                     </div>
                 </div>
@@ -1772,6 +2032,259 @@ function updatePiP() {
     }
 
     renderPiP();
+}
+// =====================================================
+
+// ===================== 同声转录模块 =====================
+let transcriptEnabled = false;       // 面板是否已从控制台开启
+let transcriptExpanded = false;      // 面板是否已展开
+let isTranscriptRecording = false;   // 正在转录中
+let transcriptRecognition = null;    // 独立的识别引擎实例
+let transcriptStartTime = null;      // 开始计时
+let _transcriptInterimEl = null;     // 当前 interim 段的 DOM 元素
+let _transcriptCharCount = 0;        // 字数统计
+let _transcriptUserScrolled = false; // 用户是否手动滚动了
+let _transcriptScrollTimer = null;
+
+// 控制台开关：显示/隐藏整个转录面板
+function toggleTranscriptPanel() {
+    transcriptEnabled = !transcriptEnabled;
+    const panel = document.getElementById('transcript-panel');
+    const btn = document.getElementById('transcript-sidebar-btn');
+
+    if (transcriptEnabled) {
+        panel.classList.add('panel-visible', 'panel-collapsed');
+        panel.classList.remove('panel-expanded');
+        transcriptExpanded = false;
+        btn.classList.add('bg-emerald-50', 'text-emerald-700');
+        btn.classList.remove('bg-slate-100', 'text-slate-600');
+    } else {
+        // 关闭时停止转录
+        if (isTranscriptRecording) stopTranscriptRecording();
+        panel.classList.remove('panel-visible', 'panel-collapsed', 'panel-expanded');
+        btn.classList.remove('bg-emerald-50', 'text-emerald-700');
+        btn.classList.add('bg-slate-100', 'text-slate-600');
+        transcriptExpanded = false;
+    }
+}
+
+// 拉手：收起/展开
+function toggleTranscriptExpand() {
+    if (!transcriptEnabled) return;
+    transcriptExpanded = !transcriptExpanded;
+    const panel = document.getElementById('transcript-panel');
+    if (transcriptExpanded) {
+        panel.classList.remove('panel-collapsed');
+        panel.classList.add('panel-expanded');
+        // 展开后滚动到最新内容
+        setTimeout(() => scrollTranscriptToEnd(), 50);
+    } else {
+        panel.classList.remove('panel-expanded');
+        panel.classList.add('panel-collapsed');
+    }
+}
+
+// 开始/停止转录
+function toggleTranscriptRecording() {
+    if (isTranscriptRecording) {
+        stopTranscriptRecording();
+    } else {
+        startTranscriptRecording();
+    }
+}
+
+function startTranscriptRecording() {
+    const SpeechAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechAPI) { alert('浏览器不支持语音识别'); return; }
+
+    // 若面板还没展开，自动展开
+    if (!transcriptExpanded) toggleTranscriptExpand();
+
+    // 移除占位符
+    const content = document.getElementById('transcript-content');
+    const placeholder = content.querySelector('.transcript-placeholder');
+    if (placeholder) placeholder.remove();
+
+    isTranscriptRecording = true;
+    transcriptStartTime = Date.now();
+    _transcriptInterimEl = null;
+    _transcriptUserScrolled = false;
+
+    // 更新 UI
+    _updateTranscriptUI();
+
+    // 独立引擎，与追踪引擎互不干扰
+    // 语言优先检测：若主引擎语言已设置则使用同语言，否则用中文兜底
+    const script = scripts.find(s => s.id === currentScriptId);
+    const lang = (script && script.language) || 'zh-CN';
+
+    transcriptRecognition = new SpeechAPI();
+    transcriptRecognition.continuous = true;
+    transcriptRecognition.interimResults = true;
+    transcriptRecognition.maxAlternatives = 1;
+    // 同时支持中英双语：主语言优先，但不限制另一种
+    transcriptRecognition.lang = lang;
+
+    transcriptRecognition.onresult = (event) => {
+        if (!isTranscriptRecording) return;
+        const result = event.results[event.results.length - 1];
+        const text = result[0].transcript.trim();
+        if (!text) return;
+
+        if (result.isFinal) {
+            // final：写入正式段落，移除 interim
+            _removeInterimEl();
+            _appendTranscriptSegment(text, false);
+            _transcriptCharCount += text.length;
+            _updateWordCount();
+        } else {
+            // interim：更新同一个临时元素，不插入新行
+            _setInterimText(text);
+        }
+
+        if (!_transcriptUserScrolled) scrollTranscriptToEnd();
+    };
+
+    transcriptRecognition.onerror = (e) => {
+        if (e.error === 'not-allowed') {
+            stopTranscriptRecording();
+            alert('麦克风权限被拒绝');
+        }
+        // 其他错误 onend 自动重启
+    };
+
+    transcriptRecognition.onend = () => {
+        if (isTranscriptRecording) {
+            // 自动重启保持连续
+            try { transcriptRecognition.start(); } catch(e) {}
+        }
+    };
+
+    try { transcriptRecognition.start(); } catch(e) {
+        isTranscriptRecording = false;
+        _updateTranscriptUI();
+    }
+
+    // 监听用户手动滚动
+    const scrollArea = document.getElementById('transcript-scroll-area');
+    scrollArea.onscroll = _handleTranscriptScroll;
+}
+
+function stopTranscriptRecording() {
+    isTranscriptRecording = false;
+    if (transcriptRecognition) {
+        transcriptRecognition.onend = null;
+        try { transcriptRecognition.stop(); } catch(e) {}
+        transcriptRecognition = null;
+    }
+    _removeInterimEl();
+    _updateTranscriptUI();
+}
+
+function _updateTranscriptUI() {
+    const btn = document.getElementById('transcript-record-btn');
+    const label = document.getElementById('transcript-record-label');
+    const dot = document.getElementById('transcript-status-dot');
+    const tabLabel = document.getElementById('transcript-tab-label');
+
+    if (isTranscriptRecording) {
+        btn.classList.add('recording');
+        label.textContent = '停止转录';
+        dot.classList.add('recording');
+        tabLabel.textContent = '转录中';
+    } else {
+        btn.classList.remove('recording');
+        label.textContent = '开始转录';
+        dot.classList.remove('recording');
+        tabLabel.textContent = '同声转录';
+    }
+}
+
+function _elapsedTime() {
+    if (!transcriptStartTime) return '0:00';
+    const sec = Math.floor((Date.now() - transcriptStartTime) / 1000);
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return m + ':' + String(s).padStart(2, '0');
+}
+
+function _appendTranscriptSegment(text, isInterim) {
+    const content = document.getElementById('transcript-content');
+    const seg = document.createElement('div');
+    seg.className = 'transcript-segment';
+
+    const timeEl = document.createElement('span');
+    timeEl.className = 'transcript-time';
+    timeEl.textContent = _elapsedTime();
+
+    const textEl = document.createElement('span');
+    textEl.className = isInterim ? 'transcript-text interim' : 'transcript-text';
+    textEl.textContent = text;
+
+    seg.appendChild(timeEl);
+    seg.appendChild(textEl);
+    content.appendChild(seg);
+
+    if (isInterim) _transcriptInterimEl = seg;
+    return seg;
+}
+
+function _setInterimText(text) {
+    if (_transcriptInterimEl) {
+        _transcriptInterimEl.querySelector('.transcript-text').textContent = text;
+    } else {
+        _appendTranscriptSegment(text, true);
+    }
+}
+
+function _removeInterimEl() {
+    if (_transcriptInterimEl) {
+        _transcriptInterimEl.remove();
+        _transcriptInterimEl = null;
+    }
+}
+
+function _updateWordCount() {
+    const el = document.getElementById('transcript-word-count');
+    if (el) el.textContent = _transcriptCharCount + ' 字';
+}
+
+function scrollTranscriptToEnd() {
+    const area = document.getElementById('transcript-scroll-area');
+    if (!area) return;
+    area.scrollTop = area.scrollHeight;
+    // 滚到底后隐藏跳转按钮
+    document.getElementById('transcript-jump-btn').classList.add('hidden');
+}
+
+function jumpToTranscriptEnd() {
+    _transcriptUserScrolled = false;
+    scrollTranscriptToEnd();
+}
+
+function _handleTranscriptScroll() {
+    const area = document.getElementById('transcript-scroll-area');
+    if (!area) return;
+    const atBottom = area.scrollHeight - area.scrollTop - area.clientHeight < 40;
+    if (atBottom) {
+        _transcriptUserScrolled = false;
+        document.getElementById('transcript-jump-btn').classList.add('hidden');
+    } else {
+        _transcriptUserScrolled = true;
+        document.getElementById('transcript-jump-btn').classList.remove('hidden');
+    }
+}
+
+function clearTranscript() {
+    if (!confirm('确定清空所有转录内容？')) return;
+    const content = document.getElementById('transcript-content');
+    content.innerHTML = '<div class="transcript-placeholder">转录内容将出现在这里…</div>';
+    _transcriptCharCount = 0;
+    _transcriptInterimEl = null;
+    _transcriptUserScrolled = false;
+    _updateWordCount();
+    document.getElementById('transcript-jump-btn').classList.add('hidden');
+    transcriptStartTime = isTranscriptRecording ? Date.now() : null;
 }
 // =====================================================
 
