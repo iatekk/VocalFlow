@@ -995,92 +995,93 @@ function isFuzzyMatch(spoken, scriptWord) {
     }
 }
 
-// 引擎底层控制
+// ===================== 语音引擎 =====================
+// 分词缓存，避免每次 onresult 重新创建 Intl.Segmenter
+let _segmenterCache = {};
+function getSegmenter(lang) {
+    if (!_segmenterCache[lang]) _segmenterCache[lang] = new Intl.Segmenter(lang, { granularity: 'word' });
+    return _segmenterCache[lang];
+}
+function wordsFromTranscript(transcript, lang) {
+    return Array.from(getSegmenter(lang).segment(transcript))
+        .filter(s => s.isWordLike)
+        .map(s => s.segment.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, ''))
+        .filter(w => w.length > 0);
+}
+
 function initSpeechRecognition(lang) {
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
         showError("您的浏览器不支持语音引擎。请使用 Chrome, Edge 或 Safari。");
         return;
     }
-    if (recognition) {
-        recognition.onend = null; 
-        recognition.abort();
-    }
+    if (recognition) { recognition.onend = null; recognition.abort(); }
 
     recognition = new SpeechRecognitionAPI();
     recognition.continuous = true;
-    recognition.interimResults = true; 
+    recognition.interimResults = true;
     recognition.lang = lang;
+    // 多候选：嘈杂环境下用多个候选交叉验证，取最优推进
+    recognition.maxAlternatives = 3;
 
-    recognition.onstart = () => { 
-        isEngineRunning = true; 
+    recognition.onstart = () => {
+        isEngineRunning = true;
         hideError();
-        
-        // 引擎启动成功，注销加载动画
         const loader = document.getElementById('engine-loader');
         if (!loader.classList.contains('hidden')) {
             document.getElementById('loader-progress').style.width = '100%';
             document.getElementById('loader-text').innerText = '引擎完全就绪，随时可以开始 (100%)';
             setTimeout(() => {
                 loader.style.opacity = '0';
-                setTimeout(() => {
-                    loader.classList.add('hidden');
-                    loader.style.opacity = '1';
-                }, 300);
+                setTimeout(() => { loader.classList.add('hidden'); loader.style.opacity = '1'; }, 300);
             }, 500);
         }
     };
 
     recognition.onresult = (event) => {
-        // 核心：引擎常驻但在后台静默运行。只有门闸（isUserTracking）打开时才把数据送入大脑
         if (!isUserTracking) return;
 
-        const segmenter = new Intl.Segmenter(lang, { granularity: 'word' });
+        // 遍历本次事件所有新结果（从 resultIndex 起），不漏处理任何 final 段
+        for (let ri = event.resultIndex; ri < event.results.length; ri++) {
+            const result = event.results[ri];
 
-        // 【零延迟策略】优先取最新一段结果（无论 interim/final），立即匹配
-        // 不累积所有历史 transcript，避免词表膨胀拖慢匹配
-        const latestResult = event.results[event.results.length - 1];
-        const latestTranscript = latestResult[0].transcript;
-
-        if (!latestTranscript.trim()) return;
-
-        const latestWords = Array.from(segmenter.segment(latestTranscript))
-            .filter(s => s.isWordLike)
-            .map(s => s.segment.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, ''));
-
-        if (latestWords.length > 0) processSpeechMatching(latestWords);
-
-        // final result：额外用前面已确认的段做一次补充校准，防止 interim 误识别漏推
-        if (latestResult.isFinal && event.results.length >= 2) {
-            let confirmedTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length - 1; ++i) {
-                if (event.results[i].isFinal) confirmedTranscript += event.results[i][0].transcript + ' ';
+            // 多候选交叉验证：找出能把 targetWordIndex 推进最远的候选
+            let bestWords = null;
+            let bestAdvance = -1;
+            for (let ai = 0; ai < result.length; ai++) {
+                const transcript = result[ai].transcript;
+                if (!transcript.trim()) continue;
+                const words = wordsFromTranscript(transcript, lang);
+                if (words.length === 0) continue;
+                const adv = _testAdvance(words);
+                if (adv > bestAdvance) { bestAdvance = adv; bestWords = words; }
             }
-            confirmedTranscript += latestTranscript;
-            if (confirmedTranscript.trim()) {
-                const confirmedWords = Array.from(segmenter.segment(confirmedTranscript))
-                    .filter(s => s.isWordLike)
-                    .map(s => s.segment.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, ''));
-                if (confirmedWords.length > 0) processSpeechMatching(confirmedWords);
+
+            // 用最优候选真正推进（若无候选能推进，用第一候选触发宽泛搜索）
+            if (bestWords) {
+                processSpeechMatching(bestWords);
+            } else {
+                const w0 = wordsFromTranscript(result[0].transcript, lang);
+                if (w0.length > 0) processSpeechMatching(w0);
             }
         }
     };
 
-    recognition.onerror = (e) => { 
+    recognition.onerror = (e) => {
+        // 只拦截权限错误；其余（network/no-speech/audio-capture）由 onend 自动重启
         if (e.error === 'not-allowed') {
-            stopEngineCompletely(); 
+            stopEngineCompletely();
             document.getElementById('engine-loader').classList.add('hidden');
             showError("麦克风权限被拒绝，请在浏览器设置中允许访问。");
         }
     };
-    
+
     recognition.onend = () => {
         isEngineRunning = false;
-        // 如果用户还在提词界面，让引擎默默重启保持常驻待命状态
         if (currentView === 'present') {
             try { recognition.start(); } catch(e) {}
         } else {
-            isUserTracking = false; 
+            isUserTracking = false;
             updateMicUI();
         }
     };
@@ -1088,109 +1089,118 @@ function initSpeechRecognition(lang) {
     try { recognition.start(); } catch(e) {}
 }
 
-// 辅助检索序列（从起点开始向下找，天然具备“就近原则”）
+// 测试一组词能推进多少，不修改全局状态
+function _testAdvance(spokenWords) {
+    const saved = targetWordIndex;
+    _matchCore(spokenWords, true);
+    const adv = targetWordIndex - saved;
+    targetWordIndex = saved;
+    return adv;
+}
+
+// 辅助：序列模糊匹配，就近原则
 function fuzzyFindSequence(seqToFind, searchStart, searchEnd) {
     if (seqToFind.length === 0) return -1;
-    for (let i = searchStart; i <= searchEnd - seqToFind.length; i++) {
-        let matchCount = 0;
+    const end = Math.min(searchEnd, wordTokens.length - seqToFind.length + 1);
+    for (let i = searchStart; i < end; i++) {
+        let ok = true;
         for (let j = 0; j < seqToFind.length; j++) {
-            if (wordTokens[i + j] && isFuzzyMatch(seqToFind[j], wordTokens[i + j].cleanText)) {
-                matchCount++;
-            }
+            if (!wordTokens[i + j] || !isFuzzyMatch(seqToFind[j], wordTokens[i + j].cleanText)) { ok = false; break; }
         }
-        if (matchCount === seqToFind.length) return i + seqToFind.length - 1; 
+        if (ok) return i + seqToFind.length - 1;
     }
     return -1;
 }
 
-// 修复重复词跳跃的核心大脑机制
-function processSpeechMatching(spokenWords) {
+// 核心匹配大脑（dryRun=true 时不触发 UI 更新）
+function _matchCore(spokenWords, dryRun) {
     if (spokenWords.length === 0) return;
 
-    // 保留最新的 6 个词进行核对
-    const recentSpoken = spokenWords.slice(-6);
-    const latestWord = recentSpoken[recentSpoken.length - 1];
-    const prevWord = recentSpoken.length > 1 ? recentSpoken[recentSpoken.length - 2] : null;
+    // 保留最新 8 词（嘈杂环境下连续漏词更多，需要更长上下文）
+    const recent = spokenWords.slice(-8);
+    const latest = recent[recent.length - 1];
+    const prev   = recent.length > 1 ? recent[recent.length - 2] : null;
 
-    let matched = false;
-
-    // 【阶段 A：零延迟前置探针】
-    // 严格限制：只往后看 2 个词（即最多允许由于卡顿跳过1个未识别词）
-    // 完美解决由于前后重复导致的跳句问题：遇到重复词它永远只会先抓住眼前的第一个。
-    for (let i = targetWordIndex; i <= targetWordIndex + 2 && i < wordTokens.length; i++) {
-        const expectedWord = wordTokens[i].cleanText;
-        
-        if (isFuzzyMatch(latestWord, expectedWord)) {
-            targetWordIndex = i + 1; // 更新大脑指针
-            matched = true;
-            break;
-        }
-        if (prevWord && isFuzzyMatch(prevWord, expectedWord)) {
+    // 【阶段 A：零延迟前置探针】允许跳过最多 3 个漏识别词（嘈杂环境适配）
+    for (let i = targetWordIndex; i <= targetWordIndex + 4 && i < wordTokens.length; i++) {
+        const exp = wordTokens[i].cleanText;
+        if (isFuzzyMatch(latest, exp) || (prev && isFuzzyMatch(prev, exp))) {
             targetWordIndex = i + 1;
-            matched = true;
-            break;
+            if (!dryRun && !isCatchingUp) catchUpHighlight();
+            return;
         }
     }
 
-    // 一旦大脑进度被推进，立刻触发平滑且极速的拉链式动画，保证UI不生硬
-    if (matched) {
-        if (!isCatchingUp) catchUpHighlight();
-        return; 
-    }
-
-    // 【阶段 B：动态视野序列检索 (防跳跃保护网)】
-    let bestMatchIndex = -1;
-    const startIndex = Math.max(0, targetWordIndex - 2); 
-
-    for (let seqLen = Math.min(5, recentSpoken.length); seqLen >= 2; seqLen--) {
-        // 核心修复点：基于听到的长短动态伸缩视野
-        // 如果听到了 2 个词匹配，最多只准往后查 5 个词。
-        // 如果听到了 4 个以上的词连在一起完全一样，才被允许跳跃到后面的句子（说明是真的念错段落了）
-        let dynamicWindow = (seqLen === 2) ? 8 : ((seqLen === 3) ? 14 : 28);
-        let endIndex = Math.min(targetWordIndex + dynamicWindow, wordTokens.length);
-
-        for (let offset = 0; offset <= Math.min(2, recentSpoken.length - seqLen); offset++) {
-            const seqToFind = recentSpoken.slice(recentSpoken.length - seqLen - offset, recentSpoken.length - offset);
-            const match = fuzzyFindSequence(seqToFind, startIndex, endIndex);
-            if (match !== -1) { 
-                bestMatchIndex = match; 
-                break; 
-            }
+    // 【阶段 B：动态视野序列检索】
+    let best = -1;
+    const start = Math.max(0, targetWordIndex - 2);
+    for (let seqLen = Math.min(6, recent.length); seqLen >= 2; seqLen--) {
+        const window = seqLen === 2 ? 10 : seqLen === 3 ? 18 : 32;
+        const end = Math.min(targetWordIndex + window, wordTokens.length);
+        for (let offset = 0; offset <= Math.min(2, recent.length - seqLen); offset++) {
+            const seq = recent.slice(recent.length - seqLen - offset, recent.length - offset);
+            const m = fuzzyFindSequence(seq, start, end);
+            if (m !== -1) { best = m; break; }
         }
-        if (bestMatchIndex !== -1) break;
+        if (best !== -1) break;
     }
 
-    // 【阶段 C：极短单词的强行纠错】
-    if (bestMatchIndex === -1 && recentSpoken.length >= 1) {
-        const stopWords = ['的','了','我','你','他','她','它','是','在','a','an','the','is','am','are','to','and','of','in','on','it','i'];
-        for(let k = 1; k <= Math.min(3, recentSpoken.length); k++) {
-            const singleWord = recentSpoken[recentSpoken.length - k];
-            if (!stopWords.includes(singleWord)) {
-                // 对于零散的单一单词，视野被极其严格地限制为只看接下来的 4 个词
-                const match = fuzzyFindSequence([singleWord], targetWordIndex, Math.min(targetWordIndex + 4, wordTokens.length));
-                if (match !== -1) { 
-                    bestMatchIndex = match; 
-                    break; 
-                }
+    // 【阶段 C：单词兜底，停用词豁免】
+    if (best === -1) {
+        const stopWords = new Set(['的','了','我','你','他','她','它','是','在','也','就','都','和','与','或','但','而','a','an','the','is','am','are','to','and','of','in','on','it','i','be','was','were','has','have']);
+        for (let k = 1; k <= Math.min(4, recent.length); k++) {
+            const w = recent[recent.length - k];
+            if (!stopWords.has(w)) {
+                const m = fuzzyFindSequence([w], targetWordIndex, Math.min(targetWordIndex + 6, wordTokens.length));
+                if (m !== -1) { best = m; break; }
             }
         }
     }
 
-    if (bestMatchIndex !== -1 && bestMatchIndex >= targetWordIndex) {
-        targetWordIndex = bestMatchIndex + 1;
-        if (!isCatchingUp) catchUpHighlight();
+    if (best !== -1 && best >= targetWordIndex) {
+        targetWordIndex = best + 1;
+        if (!dryRun && !isCatchingUp) catchUpHighlight();
     }
 }
 
+function processSpeechMatching(spokenWords) { _matchCore(spokenWords, false); }
 function toggleListening() { 
     if (isUserTracking) {
         isUserTracking = false;
         updateMicUI();
     } else {
+        // 同步大脑指针到当前显示位置，避免积压的旧 interim 结果造成光标不动
+        targetWordIndex = currentWordIndex;
+        isCatchingUp = false;
+        clearTimeout(animationTimer);
+
         isUserTracking = true;
         updateMicUI();
-        if (!isEngineRunning && recognition) {
-            try { recognition.start(); } catch(e) {}
+
+        // 重启引擎以彻底丢弃浏览器缓存的旧 interim results
+        // 不重启的话，旧的已匹配词段会在第一帧重新触发，导致追踪"冻结"直到说出新词
+        if (recognition) {
+            const restartEngine = () => {
+                if (!isUserTracking) return;
+                recognition.onend = () => {
+                    isEngineRunning = false;
+                    if (currentView === 'present') {
+                        try { recognition.start(); } catch(e) {}
+                    } else {
+                        isUserTracking = false;
+                        updateMicUI();
+                    }
+                };
+                try { recognition.start(); } catch(e) {}
+            };
+            if (isEngineRunning) {
+                try {
+                    recognition.onend = () => { isEngineRunning = false; setTimeout(restartEngine, 80); };
+                    recognition.abort();
+                } catch(e) { restartEngine(); }
+            } else {
+                restartEngine();
+            }
         }
     } 
 }
@@ -1356,7 +1366,7 @@ async function togglePiP() {
     try {
         pipWindow = await window.documentPictureInPicture.requestWindow({
             width: 440,
-            height: 230,
+            height: 280,
             disallowReturnToOpener: false,
         });
 
@@ -1368,36 +1378,40 @@ async function togglePiP() {
                 font-family: 'Inter', system-ui, sans-serif;
                 color: white;
                 height: 100vh;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                padding: 14px 20px 42px;
                 overflow: hidden;
                 cursor: default;
+                position: relative;
+                transition: background 0.08s;
             }
             .pip-line {
-                white-space: nowrap;
+                white-space: normal;
                 overflow: hidden;
-                text-overflow: ellipsis;
                 line-height: 1.55;
                 transition: opacity 0.2s, font-size 0.2s;
                 padding: 1px 0;
+                display: -webkit-box;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
             }
-            .pip-past   { color: rgba(255,255,255,0.15); font-size: 0.7rem; }
-            .pip-prev   { color: rgba(255,255,255,0.3); font-size: 0.83rem; margin-bottom: 3px; }
+            .pip-past   { color: rgba(255,255,255,0.15); font-size: 0.7rem; -webkit-line-clamp: 1; }
+            .pip-prev   { color: rgba(255,255,255,0.3); font-size: 0.83rem; margin-bottom: 3px; -webkit-line-clamp: 2; }
             .pip-active {
-                font-size: 1.08rem; font-weight: 700;
+                font-size: 1.05rem; font-weight: 700;
                 margin: 3px 0;
-                white-space: normal; line-height: 1.65;
+                white-space: normal;
+                line-height: 1.6;
                 padding: 4px 8px;
                 border-radius: 8px;
                 background: rgba(253,224,71,0.06);
                 border-left: 2px solid rgba(253,224,71,0.4);
                 cursor: pointer;
+                display: block;
+                overflow: visible;
+                -webkit-line-clamp: unset;
             }
             .pip-active:hover { background: rgba(253,224,71,0.1); }
-            .pip-next   { color: rgba(255,255,255,0.3); font-size: 0.83rem; margin-top: 3px; }
-            .pip-future { color: rgba(255,255,255,0.15); font-size: 0.7rem; }
+            .pip-next   { color: rgba(255,255,255,0.3); font-size: 0.83rem; margin-top: 3px; -webkit-line-clamp: 2; }
+            .pip-future { color: rgba(255,255,255,0.15); font-size: 0.7rem; -webkit-line-clamp: 1; }
             .pip-w-past    { color: rgba(255,255,255,0.2); }
             .pip-w-active  {
                 background: #fde047; color: #0f172a;
@@ -1410,10 +1424,11 @@ async function togglePiP() {
             .pip-w-future  { color: rgba(255,255,255,0.72); cursor: pointer; }
             .pip-w-future:hover { color: #fff; }
             .pip-scroll-hint {
-                position: absolute; top: 6px; right: 10px;
+                position: absolute; top: 4px; right: 36px;
                 font-size: 0.58rem; color: rgba(255,255,255,0.2);
                 letter-spacing: 0.04em;
                 pointer-events: none;
+                z-index: 20;
             }
             .pip-progress {
                 position: absolute; bottom: 0; left: 0; right: 0;
@@ -1429,6 +1444,41 @@ async function togglePiP() {
                 font-size: 0.58rem; color: rgba(99,102,241,0.5);
                 letter-spacing: 0.04em;
                 transition: opacity 0.4s;
+            }
+            #pip-content-layer {
+                position: relative;
+                z-index: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                padding: 22px 20px 44px;
+                height: 100%;
+                overflow: hidden;
+            }
+            /* 重置按钮 */
+            #pip-reset-btn {
+                position: absolute;
+                top: 18px; right: 10px;
+                width: 20px; height: 20px;
+                border-radius: 50%;
+                border: 1px solid rgba(255,255,255,0.12);
+                background: rgba(255,255,255,0.06);
+                color: rgba(255,255,255,0.35);
+                display: flex; align-items: center; justify-content: center;
+                cursor: pointer;
+                transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.4s;
+                z-index: 20;
+                padding: 0;
+                outline: none;
+            }
+            #pip-reset-btn:hover {
+                background: rgba(253,224,71,0.15);
+                border-color: rgba(253,224,71,0.4);
+                color: rgba(253,224,71,0.9);
+            }
+            #pip-reset-btn.spinning {
+                transform: rotate(360deg);
+                transition: transform 0.45s cubic-bezier(0.4,0,0.2,1);
             }
             /* 追踪控制栏 */
             .pip-track-bar {
@@ -1496,19 +1546,48 @@ async function togglePiP() {
         pipWindow.document.body.innerHTML = `
             <div class="pip-auto-badge" id="pip-auto-badge">● 自动跟进</div>
             <div class="pip-scroll-hint">滚轮翻句 · 点词校准</div>
-            <div class="pip-line pip-past"   id="pip-past2"></div>
-            <div class="pip-line pip-prev"   id="pip-prev"></div>
-            <div class="pip-line pip-active" id="pip-active"></div>
-            <div class="pip-line pip-next"   id="pip-next"></div>
-            <div class="pip-line pip-future" id="pip-future"></div>
-            <div class="pip-track-bar">
-                <button class="pip-track-btn" id="pip-track-btn" onclick="window._pipToggleTracking()">
-                    <span class="pip-track-dot"></span>
-                    <span id="pip-track-label">开始追踪</span>
-                </button>
+
+            <button id="pip-reset-btn" title="重置到开头">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                    <path d="M3 3v5h5"/>
+                </svg>
+            </button>
+            <div id="pip-content-layer">
+                <div class="pip-line pip-past"   id="pip-past2"></div>
+                <div class="pip-line pip-prev"   id="pip-prev"></div>
+                <div class="pip-line pip-active" id="pip-active"></div>
+                <div class="pip-line pip-next"   id="pip-next"></div>
+                <div class="pip-line pip-future" id="pip-future"></div>
+                <div class="pip-track-bar">
+                    <button class="pip-track-btn" id="pip-track-btn" onclick="window._pipToggleTracking()">
+                        <span class="pip-track-dot"></span>
+                        <span id="pip-track-label">开始追踪</span>
+                    </button>
+                </div>
+                <div class="pip-progress"><div class="pip-progress-fill" id="pip-fill" style="width:0%"></div></div>
             </div>
-            <div class="pip-progress"><div class="pip-progress-fill" id="pip-fill" style="width:0%"></div></div>
         `;
+
+
+                // 重置到开头按钮
+        const pipResetBtn = pipWindow.document.getElementById('pip-reset-btn');
+        pipResetBtn.addEventListener('click', () => {
+            // 旋转动画
+            pipResetBtn.classList.add('spinning');
+            setTimeout(() => pipResetBtn.classList.remove('spinning'), 500);
+            // 重置进度到第一个词
+            clearTimeout(animationTimer);
+            isCatchingUp = false;
+            currentWordIndex = 0;
+            targetWordIndex = 0;
+            pipViewSentIdx = -1;
+            pipLastAutoSentIdx = -1;
+            _pipRafPending = false;
+            updatePrompterUI();
+            updateMiniWindow();
+            _renderPiPNow();
+        });
 
         // 初始化视图句子索引
         pipViewSentIdx = -1;
@@ -1675,16 +1754,19 @@ function updatePiP() {
 
     const trackedSentIdx = getTrackedSentIdx();
 
-    // 自动推进：当读完某句最后一个词时，若用户没有手动滚动，自动切到下一句显示
-    // 用 pipLastAutoSentIdx 防止在同一句末尾反复触发
-    if (trackedSentIdx >= 0 && trackedSentIdx !== pipLastAutoSentIdx) {
+    if (trackedSentIdx >= 0) {
         const sent = parsedData[trackedSentIdx];
         if (sent && sent.words.length > 0) {
             const lastWordIdx = sent.words[sent.words.length - 1].globalIndex;
-            if (currentWordIndex > lastWordIdx) {
-                // 已读完这句，自动重置偏移让视图跟随到下一句
+
+            // 自动推进：读完当前句（currentWordIndex >= lastWordIdx），
+            // 或朗读句发生变化（说到了新句）时，清除手动滚轮偏移，恢复自动跟踪
+            const sentChanged = trackedSentIdx !== pipLastAutoSentIdx;
+            const sentFinished = currentWordIndex >= lastWordIdx;
+
+            if (sentChanged || sentFinished) {
                 pipLastAutoSentIdx = trackedSentIdx;
-                pipViewSentIdx = -1;
+                pipViewSentIdx = -1; // 清除手动偏移，恢复自动跟踪
             }
         }
     }
