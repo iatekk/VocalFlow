@@ -119,6 +119,8 @@
             z-index: 40;
             box-shadow: 2px 0 12px rgba(0,0,0,0.04);
             position: relative;
+            flex: 1;
+            min-height: 0;
         }
         #sticky-note-panel::before {
             content: '';
@@ -315,9 +317,113 @@
             transition: opacity 0.3s;
         }
 
+
+        /* ===== 红色高光标记 ===== */
+        .word-highlight {
+            background: linear-gradient(135deg, rgba(239,68,68,0.18) 0%, rgba(239,68,68,0.10) 100%);
+            border-color: rgba(239,68,68,0.35) !important;
+            border-radius: 0.45rem;
+            position: relative;
+            z-index: 1;
+        }
+        .word-highlight .word-text { color: #dc2626; font-weight: 700; }
+        /* 黄色光标层级高于红色标记：当词同时是 active 和 highlight 时，黄色优先 */
+        .word-active.word-highlight {
+            background-color: #fde047 !important;
+            border-color: #facc15 !important;
+            z-index: 15;
+        }
+        .word-active.word-highlight .word-text { color: #0f172a !important; }
+        body.highlight-mode .word-token:not(.word-highlight):hover {
+            background: rgba(239,68,68,0.08);
+            border-color: rgba(239,68,68,0.2) !important;
+            cursor: crosshair;
+        }
+        body.highlight-mode .word-highlight:hover { cursor: crosshair; }
+        #highlight-toolbar {
+            display: none;
+            position: fixed;
+            top: 72px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(220,38,38,0.95);
+            backdrop-filter: blur(12px);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 7px 18px 7px 14px;
+            border-radius: 99px;
+            box-shadow: 0 6px 24px rgba(220,38,38,0.35);
+            z-index: 200;
+            letter-spacing: 0.04em;
+            align-items: center;
+            gap: 10px;
+            animation: miniPop 0.25s cubic-bezier(0.16,1,0.3,1) forwards;
+            user-select: none;
+        }
+        #highlight-toolbar.active { display: flex; }
+        #highlight-toolbar .hl-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: rgba(255,255,255,0.7);
+            animation: pulse-dot 1s infinite;
+        }
+        @keyframes pulse-dot {
+            0%,100%{opacity:1;transform:scale(1)}
+            50%{opacity:0.5;transform:scale(0.75)}
+        }
+        /* ===== 计时器 ===== */
+        #timer-display {
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.05em;
+            font-size: 2rem;
+            font-weight: 800;
+            text-align: center;
+            line-height: 1;
+            transition: color 0.4s;
+            color: #1e293b;
+        }
+        #timer-display.warn   { color: #f59e0b; }
+        #timer-display.danger { color: #ef4444; }
+        #timer-progress-track {
+            height: 4px; background: #e2e8f0;
+            border-radius: 4px; overflow: hidden;
+        }
+        #timer-progress-fill {
+            height: 100%; border-radius: 4px;
+            transition: width 1s linear, background 0.4s;
+            background: #6366f1;
+        }
+        /* ===== 转录框滚动跳转按钮 ===== */
+        #transcript-wrapper { position: relative; }
+        #transcript-jump-btn {
+            display: none;
+            position: absolute;
+            bottom: 8px; right: 8px;
+            background: rgba(99,102,241,0.9);
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 3px 9px;
+            border-radius: 99px;
+            cursor: pointer;
+            z-index: 10;
+            letter-spacing: 0.03em;
+            box-shadow: 0 2px 8px rgba(99,102,241,0.35);
+            border: none;
+        }
+        #transcript-box::-webkit-scrollbar { width: 4px; }
+        #transcript-box::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans h-screen overflow-hidden flex flex-col selection:bg-yellow-200 selection:text-slate-900">
+
+    <!-- 高光模式工具条 -->
+    <div id="highlight-toolbar">
+        <span class="hl-dot"></span>
+        <span>标记模式已开启 · 单击词语涂抹/取消高光</span>
+        <button onclick="toggleHighlightMode()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;cursor:pointer;padding:2px 10px;border-radius:99px;font-size:0.7rem;font-weight:700;letter-spacing:0.04em;">退出</button>
+    </div>
 
     <div id="engine-loader" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center backdrop-blur-sm transition-opacity duration-300">
         <div class="bg-white rounded-3xl p-8 w-11/12 max-w-md shadow-2xl text-center modal-enter">
@@ -399,7 +505,8 @@
 
         <div id="view-present" class="view hidden flex-1 overflow-hidden bg-slate-50/50 flex flex-row">
 
-            <!-- 便利贴模块（左侧） -->
+            <!-- 左侧：便利贴 -->
+            <div style="display:flex;flex-direction:column;width:200px;min-width:200px;flex-shrink:0;overflow:hidden;height:100%;">
             <div id="sticky-note-panel">
                 <div id="sticky-note-header">
                     <span>📝 便利贴</span>
@@ -409,9 +516,41 @@
                 <div id="sticky-drop-zone" class="sticky-drop-zone">
                     拖入词语 → 自动翻译并记录
                 </div>
-            </div>
+            </div><!-- /sticky-note-panel -->
+            </div><!-- /左侧列 -->
 
             <div id="present-scroll-container" class="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative">
+
+                <!-- 计时器悬浮条（顶部居中，sticky） -->
+                <div id="timer-widget" style="position:sticky;top:0;z-index:50;display:flex;justify-content:center;padding:10px 0 0;pointer-events:none;">
+                    <div style="display:inline-flex;align-items:center;gap:10px;background:rgba(240,249,255,0.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid #bae6fd;border-top:none;border-radius:0 0 18px 18px;padding:7px 18px 9px 14px;box-shadow:0 6px 24px rgba(99,102,241,0.10);pointer-events:all;position:relative;overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#6366f1,#818cf8);"></div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <span style="font-size:0.68rem;font-weight:700;color:#3730a3;text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;">演讲计时器</span>
+                        <div id="timer-setup" style="display:flex;align-items:center;gap:6px;">
+                            <input id="timer-minutes-input" type="number" min="1" max="180" value="5"
+                                   style="width:44px;text-align:center;border:1px solid #c7d2fe;border-radius:8px;padding:4px 3px;font-size:0.8rem;font-weight:700;color:#3730a3;background:#fff;outline:none;"
+                                   onchange="timerUpdateSetup()" onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#c7d2fe'">
+                            <span style="font-size:0.68rem;color:#818cf8;font-weight:600;">分钟</span>
+                            <button onclick="timerToggle()" id="timer-start-btn"
+                                    style="padding:4px 14px;border-radius:99px;background:#ede9fe;color:#4f46e5;font-size:0.68rem;font-weight:700;border:1px solid #c4b5fd;cursor:pointer;transition:all 0.15s;letter-spacing:0.03em;white-space:nowrap;"
+                                    onmouseover="this.style.background='#ddd6fe'" onmouseout="this.style.background='#ede9fe'">开始</button>
+                        </div>
+                        <div id="timer-running-panel" style="display:none;align-items:center;gap:10px;">
+                            <div id="timer-display" style="font-variant-numeric:tabular-nums;letter-spacing:0.05em;font-size:1.45rem;font-weight:800;line-height:1;color:#1e293b;min-width:4.2ch;text-align:center;">05:00</div>
+                            <div id="timer-progress-track" style="width:72px;height:4px;background:#e0e7ff;border-radius:4px;overflow:hidden;flex-shrink:0;">
+                                <div id="timer-progress-fill" style="height:100%;border-radius:4px;background:#6366f1;width:100%;transition:width 1s linear,background 0.4s;"></div>
+                            </div>
+                            <button onclick="timerToggle()" id="timer-pause-btn"
+                                    style="padding:4px 14px;border-radius:99px;background:#e0e7ff;color:#4338ca;font-size:0.68rem;font-weight:700;border:none;cursor:pointer;transition:all 0.15s;letter-spacing:0.03em;white-space:nowrap;"
+                                    onmouseover="this.style.background='#c7d2fe'" onmouseout="this.style.background='#e0e7ff'">暂停</button>
+                        </div>
+                        <button id="timer-reset-btn" onclick="timerReset()" title="重置" style="background:none;border:none;cursor:pointer;color:#a5b4fc;padding:2px;border-radius:6px;display:flex;align-items:center;transition:color 0.15s;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='#a5b4fc'">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        </button>
+                    </div>
+                </div>
+
                 <div class="max-w-4xl mx-auto px-6 py-12 md:py-24 pb-[60vh]">
                     <div id="prompter-content" class="text-3xl md:text-5xl lg:text-[3.5rem] font-semibold text-slate-300 leading-tight">
                         </div>
@@ -459,14 +598,31 @@
                         </div>
                         <button onclick="clearTranscript()" title="清空转录" class="text-slate-300 hover:text-slate-500 transition-colors text-xs font-medium">清空</button>
                     </div>
-                    <div id="transcript-box"
-                         class="relative min-h-[90px] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-sm leading-relaxed"
-                         style="scroll-behavior:smooth;">
-                        <p id="transcript-placeholder" class="text-slate-300 select-none text-center mt-2 text-xs">开启追踪后，识别文字将在此实时显示</p>
-                        <div id="transcript-confirmed" class="text-slate-400 font-medium break-words whitespace-pre-wrap"></div>
-                        <span id="transcript-interim" class="text-indigo-500 font-semibold italic break-words"></span>
-                        <span id="transcript-cursor" class="hidden ml-0.5 inline-block w-0.5 h-4 bg-indigo-400 align-middle animate-pulse"></span>
+                    <div id="transcript-wrapper">
+                        <div id="transcript-box"
+                             class="min-h-[90px] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-sm leading-relaxed"
+                             style="scroll-behavior:auto;">
+                            <p id="transcript-placeholder" class="text-slate-300 select-none text-center mt-2 text-xs">开启追踪后，识别文字将在此实时显示</p>
+                            <div id="transcript-confirmed" class="text-slate-400 font-medium break-words whitespace-pre-wrap"></div>
+                            <span id="transcript-interim" class="text-indigo-500 font-semibold italic break-words"></span>
+                            <span id="transcript-cursor" class="hidden ml-0.5 inline-block w-0.5 h-4 bg-indigo-400 align-middle animate-pulse"></span>
+                        </div>
+                        <button id="transcript-jump-btn" onclick="transcriptJumpToBottom()">↓ 跳到最新</button>
                     </div>
+                </div>
+
+                <!-- 高光标记 -->
+                <div class="flex flex-col gap-2">
+                    <div class="text-sm font-semibold text-slate-600 flex items-center space-x-2">
+                        <svg class="text-slate-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        <span>重点标记</span>
+                    </div>
+                    <button id="highlight-toggle-btn" onclick="toggleHighlightMode()"
+                            class="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-red-300 hover:bg-red-50 text-slate-500 hover:text-red-600 text-xs font-bold transition-all active:scale-95">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.707 5.826l-2.533-2.533a1 1 0 0 0-1.414 0l-3.172 3.172-1.414-1.414-1.414 1.414 1.413 1.412-6.6 6.6A2 2 0 0 0 5 16v3h3a2 2 0 0 0 1.42-.59l6.6-6.6 1.412 1.412 1.414-1.414-1.414-1.414 3.172-3.172a1 1 0 0 0 0-1.396z"/></svg>
+                        <span id="highlight-btn-label">进入标记模式</span>
+                    </button>
+                    <p class="text-xs text-slate-400 leading-relaxed">进入后单击词语涂抹/取消红色高光，再次点击按钮退出。</p>
                 </div>
 
                 <div class="flex flex-col space-y-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-100">
@@ -474,7 +630,7 @@
                     
                     <div class="flex items-start space-x-3 text-sm text-slate-600">
                         <kbd class="font-sans border border-slate-300 rounded-md px-2 py-0.5 bg-white shadow-sm text-slate-700 font-bold tracking-wide mt-0.5 flex-shrink-0">左键</kbd>
-                        <span class="leading-relaxed">识别跟丢时，直接点击单词手动跳转进度。</span>
+                        <span class="leading-relaxed">普通模式：点击单词跳转进度。</span>
                     </div>
                     
                     <div class="flex items-start space-x-3 text-sm text-slate-600">
@@ -546,6 +702,7 @@ if (typeof Intl.Segmenter === 'undefined') {
 
 // 双重引擎控制流
 let isEngineRunning = false;   // 物理语音引擎状态 (后台常驻)
+let isEngineStarting = false;  // 引擎启动中（防竞态）
 let isUserTracking = false;    // 逻辑判定门闸 (控制台开关)
 
 let currentWordIndex = 0;      // 视觉进度指针 (逐词高亮层)
@@ -630,6 +787,9 @@ function navigate(view, scriptId = null) {
         stopEngineCompletely();
         stopAudioVisualizer();
         clearTimeout(animationTimer);
+        if (_highlightMode) toggleHighlightMode();
+        clearInterval(_timerInterval);
+        _timerRunning = false;
     }
     
     document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
@@ -866,7 +1026,10 @@ function renderPresent() {
                     <span class="word-note" id="note-${globalIndex}">${noteText}</span>
                 `;
 
-                wordSpan.onclick = () => jumpToWord(wordObj.globalIndex);
+                wordSpan.onclick = (e) => {
+                    if (_handleHighlightClick(wordObj.globalIndex, wordSpan)) return;
+                    jumpToWord(wordObj.globalIndex);
+                };
                 wordSpan.oncontextmenu = (e) => {
                     e.preventDefault(); 
                     openNoteModal(wordObj.globalIndex, wordObj.text);
@@ -900,6 +1063,9 @@ function renderPresent() {
     updatePrompterUI(true); 
     updateMicUI();
     initStickyNote();
+    _applyHighlightsToDOM();
+    initTranscriptScroll();
+    _transcriptUserScrolled = false;
 }
 
 function openNoteModal(index, wordText) {
@@ -977,6 +1143,8 @@ function updatePrompterUI(forceScrollToTop = false) {
         sentence.words.forEach(word => {
             const wordEl = document.querySelector(`[data-global-index="${word.globalIndex}"]`);
             if (!wordEl) return;
+            // 保留 word-highlight 类，只更新状态类
+            const isHighlighted = wordEl.classList.contains('word-highlight');
             if (word.globalIndex === currentWordIndex) {
                 wordEl.className = 'word-token word-active';
             } else if (word.globalIndex < currentWordIndex) {
@@ -984,6 +1152,7 @@ function updatePrompterUI(forceScrollToTop = false) {
             } else {
                 wordEl.className = 'word-token word-future';
             }
+            if (isHighlighted) wordEl.classList.add('word-highlight');
         });
     });
 
@@ -1048,7 +1217,8 @@ function resetTracker() {
     clearTimeout(animationTimer);
     isCatchingUp = false;
     currentWordIndex = 0; 
-    targetWordIndex = 0; 
+    targetWordIndex = 0;
+    clearTranscript();
     updatePrompterUI(true); 
     updateMiniWindow();
 }
@@ -1108,7 +1278,8 @@ function initSpeechRecognition(lang) {
     recognition.lang = lang;
 
     recognition.onstart = () => { 
-        isEngineRunning = true; 
+        isEngineRunning = true;
+        isEngineStarting = false;
         hideError();
         
         // 引擎启动成功，注销加载动画
@@ -1203,6 +1374,7 @@ function initSpeechRecognition(lang) {
     let _restarting = false;
     recognition.onend = () => {
         isEngineRunning = false;
+        isEngineStarting = false;
         if (currentView === 'present' && !_restarting) {
             _restarting = true;
             setTimeout(() => {
@@ -1217,7 +1389,8 @@ function initSpeechRecognition(lang) {
         }
     };
 
-    try { recognition.start(); } catch(e) {}
+    isEngineStarting = true;
+    try { recognition.start(); } catch(e) { isEngineStarting = false; }
 }
 
 // 辅助检索序列（从起点开始向下找，天然具备“就近原则”）
@@ -1317,12 +1490,17 @@ function processSpeechMatching(spokenWords) {
 function toggleListening() { 
     if (isUserTracking) {
         isUserTracking = false;
+        _transcriptInterim = '';   // 停止时清掉 interim，保留已确认文字
+        updateTranscriptUI();
         updateMicUI();
     } else {
         isUserTracking = true;
         updateMicUI();
-        if (!isEngineRunning && recognition) {
-            try { recognition.start(); } catch(e) {}
+        updateTranscriptUI();
+        // 引擎未运行且未在启动中时才尝试启动，防止竞态
+        if (recognition && !isEngineRunning && !isEngineStarting) {
+            isEngineStarting = true;
+            try { recognition.start(); } catch(e) { isEngineStarting = false; }
         }
     } 
 }
@@ -1827,6 +2005,195 @@ function updatePiP() {
 
 // 监听窗口大小变化
 window.addEventListener('resize', checkMiniMode);
+// =====================================================
+
+
+// ===================== 转录框滚动管理 =====================
+let _transcriptUserScrolled = false;
+
+function initTranscriptScroll() {
+    const box = document.getElementById('transcript-box');
+    const jumpBtn = document.getElementById('transcript-jump-btn');
+    if (!box) return;
+    box.addEventListener('scroll', () => {
+        const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 32;
+        _transcriptUserScrolled = !atBottom;
+        if (jumpBtn) jumpBtn.style.display = _transcriptUserScrolled ? 'block' : 'none';
+    });
+}
+
+function transcriptJumpToBottom() {
+    const box = document.getElementById('transcript-box');
+    if (box) { box.scrollTop = box.scrollHeight; }
+    _transcriptUserScrolled = false;
+    const jumpBtn = document.getElementById('transcript-jump-btn');
+    if (jumpBtn) jumpBtn.style.display = 'none';
+}
+
+// 覆盖上一版 updateTranscriptUI，加入滚动跳底逻辑
+function updateTranscriptUI() {
+    const placeholder = document.getElementById('transcript-placeholder');
+    const confirmed   = document.getElementById('transcript-confirmed');
+    const interim     = document.getElementById('transcript-interim');
+    const cursor      = document.getElementById('transcript-cursor');
+    const box         = document.getElementById('transcript-box');
+    if (!confirmed) return;
+    const hasContent = _transcriptConfirmed.length > 0 || _transcriptInterim.length > 0;
+    if (placeholder) placeholder.style.display = hasContent ? 'none' : '';
+    confirmed.textContent = _transcriptConfirmed;
+    interim.textContent   = _transcriptInterim;
+    if (cursor) cursor.classList.toggle('hidden', !isUserTracking);
+    // 只有用户没有手动上翻时，才自动滚到底部
+    if (box && !_transcriptUserScrolled) {
+        box.scrollTop = box.scrollHeight;
+    }
+}
+// =====================================================
+
+// ===================== 计时器模块 =====================
+let _timerTotal    = 5 * 60;  // 总秒数（由输入框决定）
+let _timerLeft     = 5 * 60;  // 剩余秒数
+let _timerInterval = null;
+let _timerRunning  = false;
+
+function timerUpdateSetup() {
+    const inp = document.getElementById('timer-minutes-input');
+    const mins = Math.max(1, Math.min(180, parseInt(inp.value) || 5));
+    inp.value = mins;
+    _timerTotal = mins * 60;
+    _timerLeft  = _timerTotal;
+    _timerRunning = false;
+    clearInterval(_timerInterval);
+    _timerRenderDisplay();
+    // 重置时回到设置状态
+    document.getElementById('timer-running-panel').style.display = 'none';
+    document.getElementById('timer-setup').style.display = '';
+    const btn = document.getElementById('timer-start-btn');
+    if (btn) btn.textContent = '开始';
+}
+
+function timerToggle() {
+    if (!_timerRunning) {
+        // 开始 / 继续
+        _timerRunning = true;
+        document.getElementById('timer-setup').style.display = 'none';
+        document.getElementById('timer-running-panel').style.display = 'flex';
+        const pb = document.getElementById('timer-pause-btn');
+        if (pb) pb.textContent = '暂停';
+        _timerInterval = setInterval(_timerTick, 1000);
+    } else {
+        // 暂停
+        _timerRunning = false;
+        clearInterval(_timerInterval);
+        const pb = document.getElementById('timer-pause-btn');
+        if (pb) pb.textContent = '继续';
+    }
+}
+
+function timerReset() {
+    clearInterval(_timerInterval);
+    _timerRunning = false;
+    const inp = document.getElementById('timer-minutes-input');
+    const mins = Math.max(1, Math.min(180, parseInt(inp ? inp.value : 5) || 5));
+    _timerTotal = mins * 60;
+    _timerLeft  = _timerTotal;
+    _timerRenderDisplay();
+    document.getElementById('timer-running-panel').style.display = 'none';
+    document.getElementById('timer-setup').style.display = '';
+}
+
+function _timerTick() {
+    if (_timerLeft <= 0) {
+        clearInterval(_timerInterval);
+        _timerRunning = false;
+        _timerLeft = 0;
+        _timerRenderDisplay();
+        // 时间到：震动提示
+        try { if (navigator.vibrate) navigator.vibrate([200,100,200]); } catch(e){}
+        const pb = document.getElementById('timer-pause-btn');
+        if (pb) { pb.textContent = '时间到！'; pb.style.background = '#fef2f2'; pb.style.color = '#dc2626'; }
+        return;
+    }
+    _timerLeft--;
+    _timerRenderDisplay();
+}
+
+function _timerRenderDisplay() {
+    const disp = document.getElementById('timer-display');
+    const fill = document.getElementById('timer-progress-fill');
+    if (!disp) return;
+    const m = String(Math.floor(_timerLeft / 60)).padStart(2, '0');
+    const s = String(_timerLeft % 60).padStart(2, '0');
+    disp.textContent = m + ':' + s;
+    const pct = _timerTotal > 0 ? (_timerLeft / _timerTotal) * 100 : 0;
+    if (fill) {
+        fill.style.width = pct + '%';
+        if (pct > 25) { fill.style.background = '#6366f1'; }
+        else if (pct > 10) { fill.style.background = '#f59e0b'; }
+        else { fill.style.background = '#ef4444'; }
+    }
+    disp.className = '';
+    if (_timerLeft <= 0) { disp.id = 'timer-display'; disp.style.color = '#ef4444'; }
+    else if (pct <= 10)  { disp.className = 'danger'; }
+    else if (pct <= 25)  { disp.className = 'warn'; }
+}
+// =====================================================
+
+// ===================== 红色高光标记模块 =====================
+let _highlightMode = false;
+// 持久化存储：{ scriptId: { globalIndex: true } }
+function _getHighlights() {
+    if (!currentScriptId) return {};
+    const all = JSON.parse(localStorage.getItem('vocalflow_highlights') || '{}');
+    return all[currentScriptId] || {};
+}
+function _saveHighlights(highlights) {
+    if (!currentScriptId) return;
+    const all = JSON.parse(localStorage.getItem('vocalflow_highlights') || '{}');
+    all[currentScriptId] = highlights;
+    localStorage.setItem('vocalflow_highlights', JSON.stringify(all));
+}
+
+function toggleHighlightMode() {
+    _highlightMode = !_highlightMode;
+    document.body.classList.toggle('highlight-mode', _highlightMode);
+    const toolbar = document.getElementById('highlight-toolbar');
+    const btn     = document.getElementById('highlight-toggle-btn');
+    const label   = document.getElementById('highlight-btn-label');
+    if (toolbar) toolbar.classList.toggle('active', _highlightMode);
+    if (btn) {
+        btn.className = _highlightMode
+            ? 'w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-300 bg-red-50 text-red-600 text-xs font-bold transition-all active:scale-95'
+            : 'w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-slate-200 bg-white hover:border-red-300 hover:bg-red-50 text-slate-500 hover:text-red-600 text-xs font-bold transition-all active:scale-95';
+    }
+    if (label) label.textContent = _highlightMode ? '退出标记模式' : '进入标记模式';
+}
+
+function _applyHighlightsToDOM() {
+    const highlights = _getHighlights();
+    document.querySelectorAll('[data-global-index]').forEach(el => {
+        const idx = el.dataset.globalIndex;
+        if (highlights[idx]) {
+            el.classList.add('word-highlight');
+        } else {
+            el.classList.remove('word-highlight');
+        }
+    });
+}
+
+function _handleHighlightClick(globalIndex, wordEl) {
+    if (!_highlightMode) return false;  // 未进入标记模式，不拦截
+    const highlights = _getHighlights();
+    if (highlights[globalIndex]) {
+        delete highlights[globalIndex];
+        wordEl.classList.remove('word-highlight');
+    } else {
+        highlights[globalIndex] = true;
+        wordEl.classList.add('word-highlight');
+    }
+    _saveHighlights(highlights);
+    return true;  // 已处理，阻止跳转
+}
 // =====================================================
 
 window.onload = init;
