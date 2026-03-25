@@ -450,6 +450,25 @@
                     </div>
                 </div>
 
+                <!-- 同声转录面板 -->
+                <div class="flex flex-col space-y-2">
+                    <div class="text-sm font-semibold text-slate-600 flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <svg class="text-slate-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            <span>同声转录</span>
+                        </div>
+                        <button onclick="clearTranscript()" title="清空转录" class="text-slate-300 hover:text-slate-500 transition-colors text-xs font-medium">清空</button>
+                    </div>
+                    <div id="transcript-box"
+                         class="relative min-h-[90px] max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-sm leading-relaxed"
+                         style="scroll-behavior:smooth;">
+                        <p id="transcript-placeholder" class="text-slate-300 select-none text-center mt-2 text-xs">开启追踪后，识别文字将在此实时显示</p>
+                        <div id="transcript-confirmed" class="text-slate-400 font-medium break-words whitespace-pre-wrap"></div>
+                        <span id="transcript-interim" class="text-indigo-500 font-semibold italic break-words"></span>
+                        <span id="transcript-cursor" class="hidden ml-0.5 inline-block w-0.5 h-4 bg-indigo-400 align-middle animate-pulse"></span>
+                    </div>
+                </div>
+
                 <div class="flex flex-col space-y-4 bg-slate-50/80 p-5 rounded-2xl border border-slate-100">
                     <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">快捷操作</span>
                     
@@ -544,6 +563,32 @@ let audioContext = null;
 let analyser = null;
 let microphone = null;
 let visualizerReqId = null;
+
+// 同声转录状态
+let _transcriptConfirmed = "";
+let _transcriptInterim   = "";
+
+function updateTranscriptUI() {
+    const placeholder = document.getElementById("transcript-placeholder");
+    const confirmed   = document.getElementById("transcript-confirmed");
+    const interim     = document.getElementById("transcript-interim");
+    const cursor      = document.getElementById("transcript-cursor");
+    const box         = document.getElementById("transcript-box");
+    if (!confirmed) return;
+    const hasContent = _transcriptConfirmed.length > 0 || _transcriptInterim.length > 0;
+    if (placeholder) placeholder.style.display = hasContent ? "none" : "";
+    confirmed.textContent = _transcriptConfirmed;
+    interim.textContent   = _transcriptInterim;
+    if (cursor) cursor.classList.toggle("hidden", !isUserTracking);
+    if (box) box.scrollTop = box.scrollHeight;
+}
+
+function clearTranscript() {
+    _transcriptConfirmed = "";
+    _transcriptInterim   = "";
+    updateTranscriptUI();
+}
+
 
 function init() {
     if (scripts.length === 0) {
@@ -1086,6 +1131,29 @@ function initSpeechRecognition(lang) {
         if (!isUserTracking) return;
 
         const segmenter = new Intl.Segmenter(lang, { granularity: 'word' });
+
+        // ── 同声转录显示 ──────────────────────────────────────────
+        // 遍历本次事件中所有结果段：final 追加到 confirmed，最新 interim 显示在底部
+        let newConfirmed = '';
+        let newInterim   = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+            const t = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+                newConfirmed += t + ' ';
+            } else {
+                newInterim = t;   // 只保留最新一段 interim
+            }
+        }
+        if (newConfirmed) {
+            _transcriptConfirmed += newConfirmed;
+            // 防止无限增长：超过 2000 字符时截断旧内容，保留最近 1500 字
+            if (_transcriptConfirmed.length > 2000) {
+                _transcriptConfirmed = '…' + _transcriptConfirmed.slice(-1500);
+            }
+        }
+        _transcriptInterim = newInterim;
+        updateTranscriptUI();
+        // ─────────────────────────────────────────────────────────
 
         // 【零延迟策略】优先取最新一段结果（无论 interim/final），立即匹配
         // 不累积所有历史 transcript，避免词表膨胀拖慢匹配
